@@ -114,4 +114,16 @@ impl CPU {
             false => *self.F() &= !(flag as u8)
         }
     }
+
+    pub fn load_u8(&mut self) -> u8 {
+        let v = self.memory.read(self.PC);
+        self.PC += 1;
+        v
+    }
+
+    pub fn load_u16(&mut self) -> u16 {
+        let v = ((self.memory.read(self.PC) as u16) << 8) | self.memory.read(self.PC+1) as u16;
+        self.PC += 2;
+        v
+    }
 }
