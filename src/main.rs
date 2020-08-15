@@ -1,5 +1,6 @@
-mod cpu;
+mod emulator;
+
 
 fn main() {
-    let mut c = cpu::CPU::new();
+    let mut c = emulator::CPU::new();
 }

@@ -1,3 +1,5 @@
+use crate::emulator::Memory;
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 struct reg {
@@ -28,6 +30,8 @@ pub struct CPU {
     pub SP: u16,    // stack pointer
     pub PC: u16,    // program counter
     pub IME: bool,  // interrupt master enable
+
+    pub memory: Memory
 }
 
 impl CPU {
@@ -40,7 +44,9 @@ impl CPU {
 
             SP: 0xFFFE,
             PC: 0x100,
-            IME: false
+            IME: false,
+
+            memory: Memory::new()
         }
     }
 
