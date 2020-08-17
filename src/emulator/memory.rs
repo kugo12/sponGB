@@ -1,16 +1,16 @@
 pub struct Cartridge {
-
+    rom: Vec<u8>
 }
 
 impl Cartridge {
     fn new() -> Cartridge {
         Cartridge {
-
+            rom: vec![]
         }
     }
 
     fn read_rom(&self, addr: u16) -> u8 {
-        0
+        self.rom[addr as usize]
     }
     fn write_rom(&mut self, addr: u16, val: u8) {
 
@@ -21,6 +21,10 @@ impl Cartridge {
     }
     fn write_ram(&mut self, addr: u16, val: u8) {
 
+    }
+
+    pub fn load_from_vec(&mut self, v: Vec<u8>) {
+        self.rom = v;
     }
 }
 

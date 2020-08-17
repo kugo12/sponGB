@@ -4,4 +4,4 @@ mod opcodes;
 
 pub use cpu::{CPU, Flag};
 pub use memory::{Memory, Cartridge};
-pub use opcodes::*;
+pub use opcodes::execute;

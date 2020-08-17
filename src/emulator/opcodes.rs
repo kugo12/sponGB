@@ -1,181 +1,360 @@
 use crate::emulator::CPU;
 
-pub fn RLC(cpu: &mut CPU) {
-    println!("RLC not implemented yet");
+fn LDRR(cpu: &mut CPU, instr: u8) -> u8 {
+    let to = (instr - 0x40) >> 3;
+    let (val, hl) = cpu.get_val_reg(instr);
+
+    match to {
+        0 => *cpu.B() = val,
+        1 => *cpu.C() = val,
+        2 => *cpu.D() = val,
+        3 => *cpu.E() = val,
+        4 => *cpu.H() = val,
+        5 => *cpu.L() = val,
+        6 => {
+            let addr = *cpu.HL();
+            cpu.memory.write(addr, val);
+        },
+        7 => *cpu.A() = val,
+        _ => panic!()
+    };
+
+    if hl || to == 6 {
+        2
+    } else {
+        1
+    }
 }
 
-pub fn RRC(cpu: &mut CPU) {
-    println!("RRC not implemented yet");
+pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
+    match inst {
+        // LOAD R1, 8bit
+        0x06 => {
+            *cpu.B() = cpu.load_u8();
+            2
+        },
+        0x0E => {
+            *cpu.C() = cpu.load_u8();
+            2
+        },
+        0x16 => {
+            *cpu.D() = cpu.load_u8();
+            2
+        },
+        0x1E => {
+            *cpu.E() = cpu.load_u8();
+            2
+        },
+        0x26 => {
+            *cpu.H() = cpu.load_u8();
+            2
+        },
+        0x2E => {
+            *cpu.L() = cpu.load_u8();
+            2
+        },
+        0x36 => {
+            let addr = *cpu.HL();
+            let val = cpu.load_u8();
+            cpu.memory.write(addr, val);
+            3
+        },
+        0x3E => {
+            *cpu.A() = cpu.load_u8();
+            2
+        },
+
+        // HALT
+        0x76 => {
+            cpu.halt = true;
+            1
+        },
+
+        // LOAD R1, R2
+        0x40 ..= 0x7F => {
+            LDRR(cpu, inst)
+        },
+
+        // LOAD ACC
+        0x02 => {
+            let addr = *cpu.BC();
+            let val = *cpu.A();
+            cpu.memory.write(addr, val);
+            2
+        },
+        0x12 => {
+            let addr = *cpu.DE();
+            let val = *cpu.A();
+            cpu.memory.write(addr, val);
+            2
+        },
+        0x22 => {
+            let addr = *cpu.HL();
+            let val = *cpu.A();
+            cpu.memory.write(addr, val);
+            *cpu.HL() += 1;
+            2
+        },
+        0x32 => {
+            let addr = *cpu.HL();
+            let val = *cpu.A();
+            cpu.memory.write(addr, val);
+            *cpu.HL() -= 1;
+            2
+        },
+
+        0x0A => {
+            let addr = *cpu.BC();
+            *cpu.A() = cpu.memory.read(addr);
+            2
+        },
+        0x1A => {
+            let addr = *cpu.DE();
+            *cpu.A() = cpu.memory.read(addr);
+            2
+        },
+        0x2A => {
+            let addr = *cpu.HL();
+            *cpu.A() = cpu.memory.read(addr);
+            *cpu.HL() += 1;
+            2
+        },
+        0x3A => {
+            let addr = *cpu.HL();
+            *cpu.A() = cpu.memory.read(addr);
+            *cpu.HL() -= 1;
+            2
+        },
+
+        0xE0 => {
+            let addr = 0xFF00 + cpu.load_u8() as u16;
+            let val = *cpu.A();
+            cpu.memory.write(addr, val);
+            3
+        },
+        0xF0 => {
+            let addr = 0xFF00 + cpu.load_u8() as u16;
+            *cpu.A() = cpu.memory.read(addr);
+            3
+        },
+
+        0xE2 => {
+            let addr = 0xFF00 + *cpu.C() as u16;
+            let val = *cpu.A();
+            cpu.memory.write(addr, val);
+            2
+        },
+        0xF2 => {
+            let addr = 0xFF00 + *cpu.C() as u16;
+            *cpu.A() = cpu.memory.read(addr);
+            2
+        },
+
+        0xEA => {
+            let addr = cpu.load_u16();
+            let val = *cpu.A();
+            cpu.memory.write(addr, val);
+            4
+        },
+        0xFA => {
+            let addr = cpu.load_u16();
+            *cpu.A() = cpu.memory.read(addr);
+            4
+        }
+
+        // NOP
+        0x00 => { 1 },
+
+        0xCB => {
+            let cbinst = cpu.load_u8();
+            match cbinst {
+                _ => {
+                    println!("0x{:x}{:x} not implemented", inst, cbinst);
+                    1
+                }
+            }
+        }
+
+        _ => {
+            println!("0x{:x} not implemented", inst);
+            1
+        }
+    }
 }
 
-pub fn RL(cpu: &mut CPU) {
-    println!("RL not implemented yet");
-}
 
-pub fn RR(cpu: &mut CPU) {
-    println!("RR not implemented yet");
-}
+#[cfg(test)]
+mod tests {
+    use crate::emulator::CPU;
 
-pub fn SLA(cpu: &mut CPU) {
-    println!("SLA not implemented yet");
-}
+    fn cpu_run(cpu: &mut CPU){
+        loop {
+            cpu.tick();
+            if cpu.halt {
+                break
+            }
+        }
+    }
 
-pub fn SRA(cpu: &mut CPU) {
-    println!("SRA not implemented yet");
-}
+    fn cpu_init(mut opc: Vec<u8>) -> CPU {
+        let mut c = CPU::new();
+        c.PC = 0;
+        opc.push(0x76);
+        c.memory.cart.load_from_vec(opc);
+        c
+    }
+    
+    #[test]
+    fn ld_8bit() {
+        let v = vec![
+            0x06, 0xFF, // LD B, 0xFF
+            0x0E, 0xEE, // LD C, 0xEE
+            0x16, 0xDD, // LD D, 0xDD
+            0x1E, 0xCC, // LD E, 0xCC
+            0x26, 0xCB, // LD H, 0xCB
+            0x2E, 0xAA, // LD L, 0xAA
+            0x36, 0x99, // LD (HL), 0x99   small note, address HL (0xCBAA) is internal ram
+            0x3E, 0x88  // LD A, 0x88
+        ];
+        let mut cpu = cpu_init(v);
+        cpu_run(&mut cpu);
 
-pub fn SWAP(cpu: &mut CPU) {
-    println!("SWAP not implemented yet");
-}
+        assert_eq!(*cpu.B(), 0xFF);
+        assert_eq!(*cpu.C(), 0xEE);
+        assert_eq!(*cpu.D(), 0xDD);
+        assert_eq!(*cpu.E(), 0xCC);
+        assert_eq!(*cpu.H(), 0xCB);
+        assert_eq!(*cpu.L(), 0xAA);
+        assert_eq!(*cpu.A(), 0x88);
 
-pub fn SRL(cpu: &mut CPU) {
-    println!("SRL not implemented yet");
-}
-
-pub fn BIT(cpu: &mut CPU) {
-    println!("BIT not implemented yet");
-}
-
-pub fn RES(cpu: &mut CPU) {
-    println!("RES not implemented yet");
-}
-
-pub fn SET(cpu: &mut CPU) {
-    println!("SET not implemented yet");
-}
-
-pub fn NOP(cpu: &mut CPU) {
-    println!("NOP not implemented yet");
-}
-
-pub fn LD(cpu: &mut CPU) {
-    println!("LD not implemented yet");
-}
-
-pub fn INC(cpu: &mut CPU) {
-    println!("INC not implemented yet");
-}
-
-pub fn DEC(cpu: &mut CPU) {
-    println!("DEC not implemented yet");
-}
-
-pub fn RLCA(cpu: &mut CPU) {
-    println!("RLCA not implemented yet");
-}
-
-pub fn ADD(cpu: &mut CPU) {
-    println!("ADD not implemented yet");
-}
-
-pub fn RRCA(cpu: &mut CPU) {
-    println!("RRCA not implemented yet");
-}
-
-pub fn STOP(cpu: &mut CPU) {
-    println!("STOP not implemented yet");
-}
-
-pub fn RLA(cpu: &mut CPU) {
-    println!("RLA not implemented yet");
-}
-
-pub fn JR(cpu: &mut CPU) {
-    println!("JR not implemented yet");
-}
-
-pub fn RRA(cpu: &mut CPU) {
-    println!("RRA not implemented yet");
-}
-
-pub fn DAA(cpu: &mut CPU) {
-    println!("DAA not implemented yet");
-}
-
-pub fn CPL(cpu: &mut CPU) {
-    println!("CPL not implemented yet");
-}
-
-pub fn SCF(cpu: &mut CPU) {
-    println!("SCF not implemented yet");
-}
-
-pub fn CCF(cpu: &mut CPU) {
-    println!("CCF not implemented yet");
-}
-
-pub fn HALT(cpu: &mut CPU) {
-    println!("HALT not implemented yet");
-}
-
-pub fn ADC(cpu: &mut CPU) {
-    println!("ADC not implemented yet");
-}
-
-pub fn SUB(cpu: &mut CPU) {
-    println!("SUB not implemented yet");
-}
-
-pub fn SBC(cpu: &mut CPU) {
-    println!("SBC not implemented yet");
-}
-
-pub fn AND(cpu: &mut CPU) {
-    println!("AND not implemented yet");
-}
-
-pub fn XOR(cpu: &mut CPU) {
-    println!("XOR not implemented yet");
-}
-
-pub fn OR(cpu: &mut CPU) {
-    println!("OR not implemented yet");
-}
-
-pub fn CP(cpu: &mut CPU) {
-    println!("CP not implemented yet");
-}
-
-pub fn RET(cpu: &mut CPU) {
-    println!("RET not implemented yet");
-}
-
-pub fn POP(cpu: &mut CPU) {
-    println!("POP not implemented yet");
-}
-
-pub fn JP(cpu: &mut CPU) {
-    println!("JP not implemented yet");
-}
-
-pub fn CALL(cpu: &mut CPU) {
-    println!("CALL not implemented yet");
-}
-
-pub fn PUSH(cpu: &mut CPU) {
-    println!("PUSH not implemented yet");
-}
-
-pub fn RST(cpu: &mut CPU) {
-    println!("RST not implemented yet");
-}
-
-pub fn PREFIX(cpu: &mut CPU) {
-    println!("PREFIX not implemented yet");
-}
-
-pub fn RETI(cpu: &mut CPU) {
-    println!("RETI not implemented yet");
-}
-
-pub fn LDH(cpu: &mut CPU) {
-    println!("LDH not implemented yet");
-}
-
-pub fn DI(cpu: &mut CPU) {
-    println!("DI not implemented yet");
-}
-
-pub fn EI(cpu: &mut CPU) {
-    println!("EI not implemented yet");
+        let addr = *cpu.HL();
+        assert_eq!(cpu.memory.read(addr), 0x99);
+    }
+    
+    #[test]
+    fn _0x40() { let v = vec![0x06, 0xFF, 0x40]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.B(), 0xFF); }
+    #[test]
+    fn _0x41() { let v = vec![0x0E, 0xFF, 0x41]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.B(), 0xFF); }
+    #[test]
+    fn _0x42() { let v = vec![0x16, 0xFF, 0x42]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.B(), 0xFF); }
+    #[test]
+    fn _0x43() { let v = vec![0x1E, 0xFF, 0x43]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.B(), 0xFF); }
+    #[test]
+    fn _0x44() { let v = vec![0x26, 0xFF, 0x44]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.B(), 0xFF); }
+    #[test]
+    fn _0x45() { let v = vec![0x2E, 0xFF, 0x45]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.B(), 0xFF); }
+    #[test]
+    fn _0x46() { let v = vec![0x26, 0xC0, 0x36, 0xFF, 0x46]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.B(), 0xFF); }
+    #[test]
+    fn _0x47() { let v = vec![0x3E, 0xFF, 0x47]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.B(), 0xFF); }
+    #[test]
+    fn _0x48() { let v = vec![0x06, 0xFF, 0x48]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.C(), 0xFF); }
+    #[test]
+    fn _0x49() { let v = vec![0x0E, 0xFF, 0x49]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.C(), 0xFF); }
+    #[test]
+    fn _0x4a() { let v = vec![0x16, 0xFF, 0x4a]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.C(), 0xFF); }
+    #[test]
+    fn _0x4b() { let v = vec![0x1E, 0xFF, 0x4b]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.C(), 0xFF); }
+    #[test]
+    fn _0x4c() { let v = vec![0x26, 0xFF, 0x4c]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.C(), 0xFF); }
+    #[test]
+    fn _0x4d() { let v = vec![0x2E, 0xFF, 0x4d]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.C(), 0xFF); }
+    #[test]
+    fn _0x4e() { let v = vec![0x26, 0xC0, 0x36, 0xFF, 0x4e]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.C(), 0xFF); }
+    #[test]
+    fn _0x4f() { let v = vec![0x3E, 0xFF, 0x4f]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.C(), 0xFF); }
+    #[test]
+    fn _0x50() { let v = vec![0x06, 0xFF, 0x50]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.D(), 0xFF); }
+    #[test]
+    fn _0x51() { let v = vec![0x0E, 0xFF, 0x51]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.D(), 0xFF); }
+    #[test]
+    fn _0x52() { let v = vec![0x16, 0xFF, 0x52]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.D(), 0xFF); }
+    #[test]
+    fn _0x53() { let v = vec![0x1E, 0xFF, 0x53]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.D(), 0xFF); }
+    #[test]
+    fn _0x54() { let v = vec![0x26, 0xFF, 0x54]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.D(), 0xFF); }
+    #[test]
+    fn _0x55() { let v = vec![0x2E, 0xFF, 0x55]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.D(), 0xFF); }
+    #[test]
+    fn _0x56() { let v = vec![0x26, 0xC0, 0x36, 0xFF, 0x56]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.D(), 0xFF); }
+    #[test]
+    fn _0x57() { let v = vec![0x3E, 0xFF, 0x57]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.D(), 0xFF); }
+    #[test]
+    fn _0x58() { let v = vec![0x06, 0xFF, 0x58]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.E(), 0xFF); }
+    #[test]
+    fn _0x59() { let v = vec![0x0E, 0xFF, 0x59]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.E(), 0xFF); }
+    #[test]
+    fn _0x5a() { let v = vec![0x16, 0xFF, 0x5a]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.E(), 0xFF); }
+    #[test]
+    fn _0x5b() { let v = vec![0x1E, 0xFF, 0x5b]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.E(), 0xFF); }
+    #[test]
+    fn _0x5c() { let v = vec![0x26, 0xFF, 0x5c]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.E(), 0xFF); }
+    #[test]
+    fn _0x5d() { let v = vec![0x2E, 0xFF, 0x5d]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.E(), 0xFF); }
+    #[test]
+    fn _0x5e() { let v = vec![0x26, 0xC0, 0x36, 0xFF, 0x5e]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.E(), 0xFF); }
+    #[test]
+    fn _0x5f() { let v = vec![0x3E, 0xFF, 0x5f]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.E(), 0xFF); }
+    #[test]
+    fn _0x60() { let v = vec![0x06, 0xFF, 0x60]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.H(), 0xFF); }
+    #[test]
+    fn _0x61() { let v = vec![0x0E, 0xFF, 0x61]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.H(), 0xFF); }
+    #[test]
+    fn _0x62() { let v = vec![0x16, 0xFF, 0x62]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.H(), 0xFF); }
+    #[test]
+    fn _0x63() { let v = vec![0x1E, 0xFF, 0x63]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.H(), 0xFF); }
+    #[test]
+    fn _0x64() { let v = vec![0x26, 0xFF, 0x64]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.H(), 0xFF); }
+    #[test]
+    fn _0x65() { let v = vec![0x2E, 0xFF, 0x65]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.H(), 0xFF); }
+    #[test]
+    fn _0x66() { let v = vec![0x26, 0xC0, 0x36, 0xFF, 0x66]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.H(), 0xFF); }
+    #[test]
+    fn _0x67() { let v = vec![0x3E, 0xFF, 0x67]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.H(), 0xFF); }
+    #[test]
+    fn _0x68() { let v = vec![0x06, 0xFF, 0x68]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.L(), 0xFF); }
+    #[test]
+    fn _0x69() { let v = vec![0x0E, 0xFF, 0x69]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.L(), 0xFF); }
+    #[test]
+    fn _0x6a() { let v = vec![0x16, 0xFF, 0x6a]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.L(), 0xFF); }
+    #[test]
+    fn _0x6b() { let v = vec![0x1E, 0xFF, 0x6b]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.L(), 0xFF); }
+    #[test]
+    fn _0x6c() { let v = vec![0x26, 0xFF, 0x6c]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.L(), 0xFF); }
+    #[test]
+    fn _0x6d() { let v = vec![0x2E, 0xFF, 0x6d]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.L(), 0xFF); }
+    #[test]
+    fn _0x6e() { let v = vec![0x26, 0xC0, 0x36, 0xFF, 0x6e]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.L(), 0xFF); }
+    #[test]
+    fn _0x6f() { let v = vec![0x3E, 0xFF, 0x6f]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.L(), 0xFF); }
+    #[test]
+    fn _0x70() { let v = vec![0x26, 0xC0, 0x06, 0xFF, 0x70]; let mut cpu = cpu_init(v); cpu_run(&mut cpu); let addr = *cpu.HL(); assert_eq!(cpu.memory.read(addr), 0xFF); }
+    #[test]
+    fn _0x71() { let v = vec![0x26, 0xC0, 0x0E, 0xFF, 0x71]; let mut cpu = cpu_init(v); cpu_run(&mut cpu); let addr = *cpu.HL(); assert_eq!(cpu.memory.read(addr), 0xFF); }
+    #[test]
+    fn _0x72() { let v = vec![0x26, 0xC0, 0x16, 0xFF, 0x72]; let mut cpu = cpu_init(v); cpu_run(&mut cpu); let addr = *cpu.HL(); assert_eq!(cpu.memory.read(addr), 0xFF); }
+    #[test]
+    fn _0x73() { let v = vec![0x26, 0xC0, 0x1E, 0xFF, 0x73]; let mut cpu = cpu_init(v); cpu_run(&mut cpu); let addr = *cpu.HL(); assert_eq!(cpu.memory.read(addr), 0xFF); }
+    #[test]
+    fn _0x74() { let v = vec![0x26, 0xC0, 0x26, 0xFF, 0x74]; let mut cpu = cpu_init(v); cpu_run(&mut cpu); let addr = *cpu.HL(); assert_eq!(cpu.memory.read(addr), 0xFF); }
+    #[test]
+    fn _0x75() { let v = vec![0x26, 0xC0, 0x2E, 0xFF, 0x75]; let mut cpu = cpu_init(v); cpu_run(&mut cpu); let addr = *cpu.HL(); assert_eq!(cpu.memory.read(addr), 0xFF); }
+    #[test]
+    fn _0x77() { let v = vec![0x26, 0xC0, 0x3E, 0xFF, 0x77]; let mut cpu = cpu_init(v); cpu_run(&mut cpu); let addr = *cpu.HL(); assert_eq!(cpu.memory.read(addr), 0xFF); }
+    #[test]
+    fn _0x78() { let v = vec![0x06, 0xFF, 0x78]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.A(), 0xFF); }
+    #[test]
+    fn _0x79() { let v = vec![0x0E, 0xFF, 0x79]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.A(), 0xFF); }
+    #[test]
+    fn _0x7a() { let v = vec![0x16, 0xFF, 0x7a]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.A(), 0xFF); }
+    #[test]
+    fn _0x7b() { let v = vec![0x1E, 0xFF, 0x7b]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.A(), 0xFF); }
+    #[test]
+    fn _0x7c() { let v = vec![0x26, 0xFF, 0x7c]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.A(), 0xFF); }
+    #[test]
+    fn _0x7d() { let v = vec![0x2E, 0xFF, 0x7d]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.A(), 0xFF); }
+    #[test]
+    fn _0x7e() { let v = vec![0x26, 0xC0, 0x36, 0xFF, 0x7e]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.A(), 0xFF); }
+    #[test]
+    fn _0x7f() { let v = vec![0x3E, 0xFF, 0x7f]; let mut cpu = cpu_init(v); cpu_run(&mut cpu);  assert_eq!(*cpu.A(), 0xFF); }
 }

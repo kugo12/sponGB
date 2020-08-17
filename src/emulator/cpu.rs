@@ -1,4 +1,4 @@
-use crate::emulator::Memory;
+use crate::emulator::{Memory, execute};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -31,7 +31,8 @@ pub struct CPU {
     pub PC: u16,    // program counter
     pub IME: bool,  // interrupt master enable
 
-    pub memory: Memory
+    pub memory: Memory,
+    pub halt: bool
 }
 
 impl CPU {
@@ -46,7 +47,8 @@ impl CPU {
             PC: 0x100,
             IME: false,
 
-            memory: Memory::new()
+            memory: Memory::new(),
+            halt: false
         }
     }
 
@@ -122,8 +124,38 @@ impl CPU {
     }
 
     pub fn load_u16(&mut self) -> u16 {
-        let v = ((self.memory.read(self.PC) as u16) << 8) | self.memory.read(self.PC+1) as u16;
+        let v = ((self.memory.read(self.PC+1) as u16) << 8) | self.memory.read(self.PC) as u16;
         self.PC += 2;
         v
+    }
+
+    pub fn get_val_reg(&mut self, instr: u8) -> (u8, bool) {
+        let instr = if instr & 0x0f > 7 {
+            (instr & 0x0f) - 8
+        } else {
+            instr & 0x0f
+        };
+
+        let val = match instr {
+            0 => *self.B(),
+            1 => *self.C(),
+            2 => *self.D(),
+            3 => *self.E(),
+            4 => *self.H(),
+            5 => *self.L(),
+            6 => {
+                let addr = *self.HL();
+                self.memory.read(addr)
+            },
+            7 => *self.A(),
+            _ => panic!()
+        };
+
+        (val, instr == 6)
+    }
+
+    pub fn tick(&mut self) -> u8 {
+        let inst = self.load_u8();
+        execute(self, inst)
     }
 }
