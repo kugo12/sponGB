@@ -1,4 +1,4 @@
-use crate::emulator::CPU;
+use crate::emulator::{CPU, Flag};
 
 fn LDRR(cpu: &mut CPU, instr: u8) -> u8 {
     let to = (instr - 0x40) >> 3;
@@ -28,6 +28,12 @@ fn LDRR(cpu: &mut CPU, instr: u8) -> u8 {
 
 pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
     match inst {
+        // HALT
+        0x76 => {
+            cpu.halt = true;
+            1
+        },
+
         // LOAD R1, 8bit
         0x06 => {
             *cpu.B() = cpu.load_u8();
@@ -62,12 +68,6 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         0x3E => {
             *cpu.A() = cpu.load_u8();
             2
-        },
-
-        // HALT
-        0x76 => {
-            cpu.halt = true;
-            1
         },
 
         // LOAD R1, R2
@@ -161,6 +161,45 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             *cpu.A() = cpu.memory.read(addr);
             4
         }
+
+        // 16-bit load
+        0x01 => {
+            *cpu.BC() = cpu.load_u16();
+            3
+        }
+        0x11 => {
+            *cpu.DE() = cpu.load_u16();
+            3
+        },
+        0x21 => {
+            *cpu.HL() = cpu.load_u16();
+            3
+        },
+        0x31 => {
+            cpu.SP = cpu.load_u16();
+            3
+        },
+
+        0xF9 => {
+            cpu.SP = *cpu.HL();
+            2
+        },
+
+        0xF8 => { // LD HL, SP+n
+            let sp = cpu.SP as i16;
+            let n  = cpu.load_u8() as i8 as i16;
+            cpu.set_flag(Flag::H, ((sp&0xF)+(n&0xF)) & 0x10 == 0x10);
+            cpu.set_flag(Flag::C, ((sp&0xFF)+(n&0xFF)) & 0x100 == 0x100);
+            *cpu.HL() = (sp + n) as u16;
+            3
+        },
+
+        0x08 => {
+            let addr = cpu.load_u16();
+            cpu.memory.write(addr, cpu.SP as u8);
+            cpu.memory.write(addr+1, (cpu.SP >> 8) as u8);
+            5
+        },
 
         // NOP
         0x00 => { 1 },
