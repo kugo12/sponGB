@@ -26,6 +26,19 @@ fn LDRR(cpu: &mut CPU, instr: u8) -> u8 {
     }
 }
 
+fn PUSH(cpu: &mut CPU, val: u16) {
+    cpu.memory.write(cpu.SP - 1, (val >> 8) as u8);
+    cpu.memory.write(cpu.SP - 2, val as u8);
+    cpu.SP -= 2;
+}
+
+fn POP(cpu: &mut CPU) -> u16 {
+    let lsb = cpu.memory.read(cpu.SP) as u16;
+    let msb = cpu.memory.read(cpu.SP + 1) as u16;
+    cpu.SP += 2;
+    (msb << 8) | lsb
+}
+
 pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
     match inst {
         // HALT
@@ -188,6 +201,8 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         0xF8 => { // LD HL, SP+n
             let sp = cpu.SP as i16;
             let n  = cpu.load_u8() as i8 as i16;
+            cpu.set_flag(Flag::Z, false);
+            cpu.set_flag(Flag::N, false);
             cpu.set_flag(Flag::H, ((sp&0xF)+(n&0xF)) & 0x10 == 0x10);
             cpu.set_flag(Flag::C, ((sp&0xFF)+(n&0xFF)) & 0x100 == 0x100);
             *cpu.HL() = (sp + n) as u16;
@@ -199,6 +214,46 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             cpu.memory.write(addr, cpu.SP as u8);
             cpu.memory.write(addr+1, (cpu.SP >> 8) as u8);
             5
+        },
+
+        // PUSH
+        0xF5 => {
+            let val = *cpu.AF();
+            PUSH(cpu, val);
+            4
+        },
+        0xC5 => {
+            let val = *cpu.BC();
+            PUSH(cpu, val);
+            4
+        },
+        0xD5 => {
+            let val = *cpu.DE();
+            PUSH(cpu, val);
+            4
+        },
+        0xE5 => {
+            let val = *cpu.HL();
+            PUSH(cpu, val);
+            4
+        },
+
+        // POP
+        0xF1 => {
+            *cpu.AF() = POP(cpu);
+            3
+        },
+        0xC1 => {
+            *cpu.BC() = POP(cpu);
+            3
+        },
+        0xD1 => {
+            *cpu.DE() = POP(cpu);
+            3
+        },
+        0xE1 => {
+            *cpu.HL() = POP(cpu);
+            3
         },
 
         // NOP
