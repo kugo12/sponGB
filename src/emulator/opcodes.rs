@@ -205,6 +205,97 @@ fn XOR(cpu: &mut CPU, instr: u8) -> u8 {
 }
 
 
+fn CP(cpu: &mut CPU, instr: u8) -> u8 {
+    let (val, more_cycles) = if instr == 0xEE {
+        (cpu.load_u8(), true)
+    } else {
+        cpu.get_val_reg(instr)
+    };
+
+    let z = *cpu.A() == val;
+    let c = *cpu.A() < val;
+    let hc = *cpu.A()&0xF < val&0xF;
+
+    cpu.set_flag(Flag::Z, z);
+    cpu.set_flag(Flag::N, true);
+    cpu.set_flag(Flag::H, !hc);
+    cpu.set_flag(Flag::C, !c);
+
+    match more_cycles {
+        true => 2,
+        false => 1
+    }
+}
+
+
+fn INC(cpu: &mut CPU, inst: u8) -> u8 {
+    let (h, z, cycles) = {
+        if inst == 0x34 {
+            let addr = *cpu.HL();
+            let val = cpu.memory.read(addr);
+            let tmp = val.wrapping_add(1);
+            cpu.memory.write(addr, tmp);
+
+            ((val&0xF)+1 == 0x10, tmp == 0, 3)
+        } else {
+            let val = match inst {
+                0x04 => cpu.B(),
+                0x0C => cpu.C(),
+                0x14 => cpu.D(),
+                0x1C => cpu.E(),
+                0x24 => cpu.H(),
+                0x2C => cpu.L(),
+                0x3C => cpu.A(),
+                _ => panic!()
+            };
+
+            let tmp = *val;
+            *val = val.wrapping_add(1);
+
+            ((tmp&0xF)+1 == 0x10, *val == 0, 1)
+        }
+    };
+    cpu.set_flag(Flag::N, false);
+    cpu.set_flag(Flag::H, h);
+    cpu.set_flag(Flag::Z, z);
+    cycles
+}
+
+
+fn DEC(cpu: &mut CPU, inst: u8) -> u8 {
+    let (h, z, cycles) = {
+        if inst == 0x35 {
+            let addr = *cpu.HL();
+            let val = cpu.memory.read(addr);
+            let tmp = val.wrapping_sub(1);
+            cpu.memory.write(addr, tmp);
+
+            (val < 1, tmp == 0, 3)
+        } else {
+            let val = match inst {
+                0x05 => cpu.B(),
+                0x0D => cpu.C(),
+                0x15 => cpu.D(),
+                0x1D => cpu.E(),
+                0x25 => cpu.H(),
+                0x2D => cpu.L(),
+                0x3D => cpu.A(),
+                _ => panic!()
+            };
+
+            let tmp = *val;
+            *val = val.wrapping_sub(1);
+
+            (tmp < 1, *val == 0, 1)
+        }
+    };
+    cpu.set_flag(Flag::N, true);
+    cpu.set_flag(Flag::H, !h);
+    cpu.set_flag(Flag::Z, z);
+    cycles
+}
+
+
 pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
     match inst {
         // HALT
@@ -445,17 +536,32 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         // AND
         0xA0 ..= 0xA7 | 0xE6 => {
             ADD(cpu, inst)
-        }
+        },
         
         // XOR
         0xA8 ..= 0xAF | 0xEE => {
             XOR(cpu, inst)
-        }
+        },
 
         // OR
         0xB0 ..= 0xB7 | 0xF6 => {
             OR(cpu, inst)
-        }        
+        },
+
+        // CP
+        0xB8 ..= 0xBF | 0xFE => {
+            CP(cpu, inst)
+        },
+
+        // INC
+        0x04 | 0x0C | 0x14 | 0x1C | 0x24 | 0x2C | 0x34 | 0x3C => {
+            INC(cpu, inst)
+        },
+
+        // DEC
+        0x05 | 0x0D | 0x15 | 0x1D | 0x25 | 0x2D | 0x35 | 0x3D => {
+            DEC(cpu, inst)
+        }
 
         // NOP
         0x00 => { 1 },
