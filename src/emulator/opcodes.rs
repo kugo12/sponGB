@@ -1,5 +1,6 @@
 use crate::emulator::{CPU, Flag};
 
+
 fn LDRR(cpu: &mut CPU, instr: u8) -> u8 {
     let to = (instr - 0x40) >> 3;
     let (val, hl) = cpu.get_val_reg(instr);
@@ -26,11 +27,13 @@ fn LDRR(cpu: &mut CPU, instr: u8) -> u8 {
     }
 }
 
+
 fn PUSH(cpu: &mut CPU, val: u16) {
     cpu.memory.write(cpu.SP - 1, (val >> 8) as u8);
     cpu.memory.write(cpu.SP - 2, val as u8);
     cpu.SP -= 2;
 }
+
 
 fn POP(cpu: &mut CPU) -> u16 {
     let lsb = cpu.memory.read(cpu.SP) as u16;
@@ -38,6 +41,103 @@ fn POP(cpu: &mut CPU) -> u16 {
     cpu.SP += 2;
     (msb << 8) | lsb
 }
+
+
+fn ADD(cpu: &mut CPU, instr: u8) -> u8 {
+    let (val, more_cycles) = if instr == 0xC6 {
+        (cpu.load_u8(), true)
+    } else {
+        cpu.get_val_reg(instr)
+    };
+
+    let (tmp, c) = cpu.A().overflowing_add(val);
+    let hc = ((val&0xF)+(*cpu.A()&0xF)) & 0x10 == 0x10;
+    *cpu.A() = tmp;
+
+    cpu.set_flag(Flag::Z, tmp == 0);
+    cpu.set_flag(Flag::N, false);
+    cpu.set_flag(Flag::H, hc);
+    cpu.set_flag(Flag::C, c);
+
+    match more_cycles {
+        true => 2,
+        false => 1
+    }
+}
+
+
+fn ADC(cpu: &mut CPU, instr: u8) -> u8 {
+    let (val, more_cycles) = if instr == 0xCE {
+        (cpu.load_u8(), true)
+    } else {
+        cpu.get_val_reg(instr)
+    };
+    let carry = cpu.get_flag(Flag::C) as u16;
+
+    let c = (((val as u16)&0xFF)+((*cpu.A() as u16)&0xFF) + carry) & 0x100 == 0x100;
+    let hc = ((val&0xF)+(*cpu.A()&0xF) + carry as u8) & 0x10 == 0x10;
+    let tmp = val.wrapping_add(*cpu.A()).wrapping_add(carry as u8);
+    *cpu.A() = tmp;
+
+    cpu.set_flag(Flag::Z, tmp == 0);
+    cpu.set_flag(Flag::N, false);
+    cpu.set_flag(Flag::H, hc);
+    cpu.set_flag(Flag::C, c);
+
+    match more_cycles {
+        true => 2,
+        false => 1
+    }
+}
+
+
+fn SUB(cpu: &mut CPU, instr: u8) -> u8 {
+    let (val, more_cycles) = if instr == 0xD6 {
+        (cpu.load_u8(), true)
+    } else {
+        cpu.get_val_reg(instr)
+    };
+
+    let (tmp, c) = cpu.A().overflowing_sub(val);
+    let hc = *cpu.A()&0xF < val&0xF;
+    *cpu.A() = tmp;
+
+    cpu.set_flag(Flag::Z, tmp == 0);
+    cpu.set_flag(Flag::N, true);
+    cpu.set_flag(Flag::H, !hc);
+    cpu.set_flag(Flag::C, !c);
+
+    match more_cycles {
+        true => 2,
+        false => 1
+    }
+}
+
+
+fn SBC(cpu: &mut CPU, instr: u8) -> u8 {
+    let (val, more_cycles) = if instr == 0xDE {
+        (cpu.load_u8(), true)
+    } else {
+        cpu.get_val_reg(instr)
+    };
+    let carry = cpu.get_flag(Flag::C) as u8;
+
+    let tmp = cpu.A().wrapping_sub(val).wrapping_sub(carry);
+    let hc = *cpu.A()&0xF < (val&0xF) + carry;
+    let c = (*cpu.A() as u16) < val as u16 + carry as u16;
+    *cpu.A() = tmp;
+
+    cpu.set_flag(Flag::Z, tmp == 0);
+    cpu.set_flag(Flag::N, true);
+    cpu.set_flag(Flag::H, !hc);
+    cpu.set_flag(Flag::C, !c);
+
+    match more_cycles {
+        true => 2,
+        false => 1
+    }
+}
+
 
 pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
     match inst {
@@ -254,6 +354,26 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         0xE1 => {
             *cpu.HL() = POP(cpu);
             3
+        },
+
+        // ADD
+        0x80 ..= 0x87 | 0xC6 => {
+            ADD(cpu, inst)
+        },
+
+        // ADC
+        0x88 ..= 0x8F | 0xCE => {
+            ADC(cpu, inst)
+        },
+
+        // SUB
+        0x90 ..= 0x97 | 0xD6 => {
+            SUB(cpu, inst)
+        },
+
+        // SBC
+        0x98 ..= 0x9F | 0xDE => {
+            SBC(cpu, inst)
         },
 
         // NOP
