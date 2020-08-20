@@ -296,6 +296,25 @@ fn DEC(cpu: &mut CPU, inst: u8) -> u8 {
 }
 
 
+fn ADDTOHL(cpu: &mut CPU, inst: u8) {
+    let val = match inst {
+        0x09 => *cpu.BC(),
+        0x19 => *cpu.DE(),
+        0x29 => *cpu.HL(),
+        0x39 => cpu.SP,
+        _ => panic!()
+    };
+
+    let (tmp, c) = cpu.HL().overflowing_add(val);
+    let hc = ((*cpu.HL()&0xFFF) + (val&0xFFF)) & 0x1000 == 0x1000;
+    *cpu.HL() = tmp;
+
+    cpu.set_flag(Flag::N, true);
+    cpu.set_flag(Flag::H, hc);
+    cpu.set_flag(Flag::C, c);
+}
+
+
 pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
     match inst {
         // HALT
@@ -561,7 +580,61 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         // DEC
         0x05 | 0x0D | 0x15 | 0x1D | 0x25 | 0x2D | 0x35 | 0x3D => {
             DEC(cpu, inst)
+        },
+
+        // ADD HL, r
+        0x09 | 0x19 | 0x29 | 0x39 => {
+            ADDTOHL(cpu, inst);
+            2
+        },
+
+        // ADD SP, i8
+        0xE8 => { 
+            let sp = cpu.SP as i16;
+            let n  = cpu.load_u8() as i8 as i16;
+            cpu.set_flag(Flag::Z, false);
+            cpu.set_flag(Flag::N, false);
+            cpu.set_flag(Flag::H, ((sp&0xF)+(n&0xF)) & 0x10 == 0x10);
+            cpu.set_flag(Flag::C, ((sp&0xFF)+(n&0xFF)) & 0x100 == 0x100);
+            cpu.SP = (sp + n) as u16;
+            4
+        },
+
+        // INC 16bit
+        0x03 => {
+            *cpu.BC() += 1;
+            2
+        },
+        0x13 => {
+            *cpu.DE() += 1;
+            2
+        },
+        0x23 => {
+            *cpu.HL() += 1;
+            2
+        },
+        0x33 => {
+            cpu.SP += 1;
+            2
         }
+
+        // DEC 16bit
+        0x0B => {
+            *cpu.BC() -= 1;
+            2
+        },
+        0x1B => {
+            *cpu.DE() -= 1;
+            2
+        },
+        0x2B => {
+            *cpu.HL() -= 1;
+            2
+        },
+        0x3B => {
+            cpu.SP -= 1;
+            2
+        },
 
         // NOP
         0x00 => { 1 },
