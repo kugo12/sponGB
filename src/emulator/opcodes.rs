@@ -139,6 +139,72 @@ fn SBC(cpu: &mut CPU, instr: u8) -> u8 {
 }
 
 
+fn AND(cpu: &mut CPU, instr: u8) -> u8 {
+    let (val, more_cycles) = if instr == 0xE6 {
+        (cpu.load_u8(), true)
+    } else {
+        cpu.get_val_reg(instr)
+    };
+
+    *cpu.A() &= val;
+    let z = *cpu.A() == 0;
+
+    cpu.set_flag(Flag::Z, z);
+    cpu.set_flag(Flag::N, false);
+    cpu.set_flag(Flag::H, true);
+    cpu.set_flag(Flag::C, false);
+
+    match more_cycles {
+        true => 2,
+        false => 1
+    }
+}
+
+
+fn OR(cpu: &mut CPU, instr: u8) -> u8 {
+    let (val, more_cycles) = if instr == 0xF6 {
+        (cpu.load_u8(), true)
+    } else {
+        cpu.get_val_reg(instr)
+    };
+
+    *cpu.A() |= val;
+    let z = *cpu.A() == 0;
+
+    cpu.set_flag(Flag::Z, z);
+    cpu.set_flag(Flag::N, false);
+    cpu.set_flag(Flag::H, false);
+    cpu.set_flag(Flag::C, false);
+
+    match more_cycles {
+        true => 2,
+        false => 1
+    }
+}
+
+
+fn XOR(cpu: &mut CPU, instr: u8) -> u8 {
+    let (val, more_cycles) = if instr == 0xEE {
+        (cpu.load_u8(), true)
+    } else {
+        cpu.get_val_reg(instr)
+    };
+
+    *cpu.A() ^= val;
+    let z = *cpu.A() == 0;
+
+    cpu.set_flag(Flag::Z, z);
+    cpu.set_flag(Flag::N, false);
+    cpu.set_flag(Flag::H, false);
+    cpu.set_flag(Flag::C, false);
+
+    match more_cycles {
+        true => 2,
+        false => 1
+    }
+}
+
+
 pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
     match inst {
         // HALT
@@ -375,6 +441,21 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         0x98 ..= 0x9F | 0xDE => {
             SBC(cpu, inst)
         },
+
+        // AND
+        0xA0 ..= 0xA7 | 0xE6 => {
+            ADD(cpu, inst)
+        }
+        
+        // XOR
+        0xA8 ..= 0xAF | 0xEE => {
+            XOR(cpu, inst)
+        }
+
+        // OR
+        0xB0 ..= 0xB7 | 0xF6 => {
+            OR(cpu, inst)
+        }        
 
         // NOP
         0x00 => { 1 },
