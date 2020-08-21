@@ -315,6 +315,31 @@ fn ADDTOHL(cpu: &mut CPU, inst: u8) {
 }
 
 
+fn DAA(cpu: &mut CPU) {
+    let mut val = *cpu.A();
+
+    if cpu.get_flag(Flag::N) {
+        if cpu.get_flag(Flag::H) {
+            val = val.wrapping_sub(0x6);
+        }
+        if cpu.get_flag(Flag::C) {
+            val = val.wrapping_sub(0x60);
+        }
+    } else {
+        if cpu.get_flag(Flag::H) || val&0xF > 0x9 {
+            val = val.wrapping_add(0x6);
+        }
+        if cpu.get_flag(Flag::C) || val>0x9F {
+            val = val.wrapping_add(0x60);
+        }
+    }
+
+    cpu.set_flag(Flag::Z, val == 0);
+    cpu.set_flag(Flag::H, false);
+    *cpu.A() = val;
+}
+
+
 pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
     match inst {
         // HALT
@@ -634,6 +659,37 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         0x3B => {
             cpu.SP -= 1;
             2
+        },
+
+        // DAA
+        0x27 => {
+            DAA(cpu);
+            1
+        },
+
+        // CPL
+        0x2F => {
+            *cpu.A() = !*cpu.A();
+            cpu.set_flag(Flag::N, true);
+            cpu.set_flag(Flag::H, true);
+            1
+        },
+
+        // CCF
+        0x3F => {
+            let c = cpu.get_flag(Flag::C);
+            cpu.set_flag(Flag::N, false);
+            cpu.set_flag(Flag::H, false);
+            cpu.set_flag(Flag::C, !c);
+            1
+        },
+        
+        // SCF
+        0x37 => {
+            cpu.set_flag(Flag::N, false);
+            cpu.set_flag(Flag::H, false);
+            cpu.set_flag(Flag::C, true);
+            1
         },
 
         // NOP
