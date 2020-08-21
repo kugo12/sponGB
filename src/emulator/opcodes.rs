@@ -340,6 +340,56 @@ fn DAA(cpu: &mut CPU) {
 }
 
 
+fn RLC(cpu: &mut CPU, mut val: u8) -> u8 {
+    val = val.rotate_left(1);
+
+    cpu.set_flag(Flag::Z, val == 0);
+    cpu.set_flag(Flag::N, false);
+    cpu.set_flag(Flag::H, false);
+    cpu.set_flag(Flag::C, (val&0x1) == 1);
+
+    val
+}
+
+
+fn RL(cpu: &mut CPU, mut val: u8) -> u8 {
+    let c = cpu.get_flag(Flag::C) as u8;
+    val = val.rotate_left(1);
+
+    cpu.set_flag(Flag::Z, val == 0);
+    cpu.set_flag(Flag::N, false);
+    cpu.set_flag(Flag::H, false);
+    cpu.set_flag(Flag::C, (val&0x1) == 1);
+
+    (val & 0b11111110) | c
+}
+
+
+fn RRC(cpu: &mut CPU, mut val: u8) -> u8 {
+    cpu.set_flag(Flag::C, (val&0x1) == 1);
+    val = val.rotate_right(1);
+
+    cpu.set_flag(Flag::Z, val == 0);
+    cpu.set_flag(Flag::N, false);
+    cpu.set_flag(Flag::H, false);
+
+    val
+}
+
+
+fn RR(cpu: &mut CPU, mut val: u8) -> u8 {
+    let c = (cpu.get_flag(Flag::C) as u8) << 7;
+    cpu.set_flag(Flag::C, (val&0x1) == 1);
+    val = val.rotate_right(1);
+
+    cpu.set_flag(Flag::Z, val == 0);
+    cpu.set_flag(Flag::N, false);
+    cpu.set_flag(Flag::H, false);
+
+    (val & 0b01111111) | c
+}
+
+
 pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
     match inst {
         // HALT
@@ -689,6 +739,38 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             cpu.set_flag(Flag::N, false);
             cpu.set_flag(Flag::H, false);
             cpu.set_flag(Flag::C, true);
+            1
+        },
+
+        // RLCA
+        0x07 => {
+            let mut val = *cpu.A();
+            val = RLC(cpu, val);
+            *cpu.A() = val;
+            1
+        },
+
+        // RLA
+        0x17 => {
+            let mut val = *cpu.A();
+            val = RL(cpu, val);
+            *cpu.A() = val;
+            1
+        },
+
+        // RRCA
+        0x0F => {
+            let mut val = *cpu.A();
+            val = RRC(cpu, val);
+            *cpu.A() = val;
+            1
+        },
+
+        // RRA
+        0x1F => {
+            let mut val = *cpu.A();
+            val = RR(cpu, val);
+            *cpu.A() = val;
             1
         },
 
