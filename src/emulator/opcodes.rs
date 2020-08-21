@@ -919,6 +919,13 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             }
         },
 
+        // RST xxH
+        0xC7 | 0xCF | 0xD7 | 0xDF | 0xE7 | 0xEF | 0xF7 | 0xFF => {
+            PUSH(cpu, cpu.PC);
+            cpu.PC = (inst - 0xC7) as u16;
+            4
+        },
+
         // NOP
         0x00 => { 1 },
 
