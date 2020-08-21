@@ -872,9 +872,66 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
                     if hl { 4 } else { 2 }
                 },
 
-                _ => {
-                    println!("0x{:x}{:x} not implemented", inst, cbinst);
-                    1
+                // BIT
+                0x40 ..= 0x7F => {
+                    let (val, hl) = cpu.get_val_reg(cbinst);
+                    let bit: u8 = match (cbinst - 0x40) >> 3 {
+                        0 => 1,
+                        1 => 2,
+                        2 => 4,
+                        3 => 8,
+                        4 => 16,
+                        5 => 32,
+                        6 => 64,
+                        7 => 128,
+                        _ => panic!()
+                    };
+
+                    cpu.set_flag(Flag::Z, val&bit == 0);
+                    cpu.set_flag(Flag::N, false);
+                    cpu.set_flag(Flag::H, true);
+
+                    if hl { 3 } else { 2 }
+                },
+
+                // RES
+                0x80 ..= 0xBF => {
+                    let (val, hl) = cpu.get_val_reg(cbinst);
+                    let bit: u8 = match (cbinst - 0x80) >> 3 {
+                        0 => 1,
+                        1 => 2,
+                        2 => 4,
+                        3 => 8,
+                        4 => 16,
+                        5 => 32,
+                        6 => 64,
+                        7 => 128,
+                        _ => panic!()
+                    };
+
+                    cpu.set_reg(cbinst, val & !bit);
+
+                    if hl { 4 } else { 2 }
+                },
+
+                // SET
+                0xC0 ..= 0xFF => {
+                    let (val, hl) = cpu.get_val_reg(cbinst);
+                    let bit: u8 = match (cbinst - 0xC0) >> 3 {
+                        0 => 1,
+                        1 => 2,
+                        2 => 4,
+                        3 => 8,
+                        4 => 16,
+                        5 => 32,
+                        6 => 64,
+                        7 => 128,
+                        _ => panic!()
+                    };
+
+                    cpu.set_reg(cbinst, val | bit);
+
+                    if hl { 4 } else { 2 }
                 }
             }
         }
