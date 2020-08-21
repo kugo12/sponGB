@@ -774,6 +774,101 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             1
         },
 
+        // JP nn
+        0xC3 => {
+            cpu.PC = cpu.load_u16();
+            4
+        },
+
+        // JP cc, nn
+        0xC2 => {
+            let val = cpu.load_u16();
+            if !cpu.get_flag(Flag::Z) {
+                cpu.PC = val;
+                4
+            } else {
+                3
+            }
+        },
+        0xCA => {
+            let val = cpu.load_u16();
+            if cpu.get_flag(Flag::Z) {
+                cpu.PC = val;
+                4
+            } else {
+                3
+            }
+        },
+        0xD2 => {
+            let val = cpu.load_u16();
+            if !cpu.get_flag(Flag::C) {
+                cpu.PC = val;
+                4
+            } else {
+                3
+            }
+        },
+        0xDA => {
+            let val = cpu.load_u16();
+            if cpu.get_flag(Flag::C) {
+                cpu.PC = val;
+                4
+            } else {
+                3
+            }
+        },
+
+        // JP HL
+        0xE9 => {
+            cpu.PC = *cpu.HL();
+            1
+        },
+
+        // JR n
+        0x18 => {
+            let val = cpu.load_u8() as i8 as i16;
+            cpu.PC = (val + cpu.PC as i16) as u16;
+            3
+        },
+
+        // JR cc, n
+        0x20 => {
+            let val = cpu.load_u8() as i8 as i16;
+            if !cpu.get_flag(Flag::Z) {
+                cpu.PC = (val + cpu.PC as i16) as u16;
+                3
+            } else {
+                2
+            }
+        },
+        0x28 => {
+            let val = cpu.load_u8() as i8 as i16;
+            if cpu.get_flag(Flag::Z) {
+                cpu.PC = (val + cpu.PC as i16) as u16;
+                3
+            } else {
+                2
+            }
+        },
+        0x30 => {
+            let val = cpu.load_u8() as i8 as i16;
+            if !cpu.get_flag(Flag::C) {
+                cpu.PC = (val + cpu.PC as i16) as u16;
+                3
+            } else {
+                2
+            }
+        },
+        0x38 => {
+            let val = cpu.load_u8() as i8 as i16;
+            if cpu.get_flag(Flag::C) {
+                cpu.PC = (val + cpu.PC as i16) as u16;
+                3
+            } else {
+                2
+            }
+        },
+
         // NOP
         0x00 => { 1 },
 
