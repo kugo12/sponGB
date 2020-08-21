@@ -926,6 +926,53 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             4
         },
 
+        // RET
+        0xC9 => {
+            cpu.PC = POP(cpu);
+            4
+        },
+
+        // RETI
+        0xD9 => {
+            cpu.PC = POP(cpu);
+            cpu.IME = true;
+            4
+        }
+
+        // RET cc
+        0xC0 => {
+            if !cpu.get_flag(Flag::Z) {
+                cpu.PC = POP(cpu);
+                5
+            } else {
+                2
+            }
+        },
+        0xC8 => {
+            if cpu.get_flag(Flag::Z) {
+                cpu.PC = POP(cpu);
+                5
+            } else {
+                2
+            }
+        },
+        0xD0 => {
+            if !cpu.get_flag(Flag::C) {
+                cpu.PC = POP(cpu);
+                5
+            } else {
+                2
+            }
+        },
+        0xD8 => {
+            if cpu.get_flag(Flag::C) {
+                cpu.PC = POP(cpu);
+                5
+            } else {
+                2
+            }
+        },
+
         // NOP
         0x00 => { 1 },
 
