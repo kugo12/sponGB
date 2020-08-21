@@ -812,6 +812,66 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
                     if hl { 4 } else { 2 }
                 },
 
+                // SLA
+                0x20 ..= 0x27 => {
+                    let (mut val, hl) = cpu.get_val_reg(cbinst);
+                    cpu.set_flag(Flag::C, val&0x80 == 0x80);
+
+                    val <<= 1;
+                    cpu.set_reg(cbinst, val);
+
+                    cpu.set_flag(Flag::Z, val == 0);
+                    cpu.set_flag(Flag::N, false);
+                    cpu.set_flag(Flag::H, false);
+
+                    if hl { 4 } else { 2 }
+                },
+
+                // SRA
+                0x28 ..= 0x2F => {
+                    let (mut val, hl) = cpu.get_val_reg(cbinst);
+                    cpu.set_flag(Flag::C, val&0x1 == 0x1);
+
+                    val = (val >> 1) | (val&0x80);
+                    cpu.set_reg(cbinst, val);
+
+                    cpu.set_flag(Flag::Z, val == 0);
+                    cpu.set_flag(Flag::N, false);
+                    cpu.set_flag(Flag::H, false);
+
+                    if hl { 4 } else { 2 }
+                },
+
+                // SWAP
+                0x30 ..= 0x37 => {
+                    let (mut val, hl) = cpu.get_val_reg(cbinst);
+
+                    val = val.rotate_left(4);
+                    cpu.set_reg(cbinst, val);
+
+                    cpu.set_flag(Flag::Z, val == 0);
+                    cpu.set_flag(Flag::N, false);
+                    cpu.set_flag(Flag::H, false);
+                    cpu.set_flag(Flag::C, false);
+
+                    if hl { 4 } else { 2 }
+                },
+
+                // SRL
+                0x38 ..= 0x3F => {
+                    let (mut val, hl) = cpu.get_val_reg(cbinst);
+                    cpu.set_flag(Flag::C, val&0x1 == 0x1);
+
+                    val >>= 1;
+                    cpu.set_reg(cbinst, val);
+
+                    cpu.set_flag(Flag::Z, val == 0);
+                    cpu.set_flag(Flag::N, false);
+                    cpu.set_flag(Flag::H, false);
+
+                    if hl { 4 } else { 2 }
+                },
+
                 _ => {
                     println!("0x{:x}{:x} not implemented", inst, cbinst);
                     1
