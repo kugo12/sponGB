@@ -973,6 +973,18 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             }
         },
 
+        // DI
+        0xF3 => {
+            cpu.IME = false;
+            1
+        },
+        
+        // EI
+        0xFB => {
+            cpu.EI = true;
+            1
+        },
+
         // NOP
         0x00 => { 1 },
 

@@ -30,6 +30,7 @@ pub struct CPU {
     pub SP: u16,    // stack pointer
     pub PC: u16,    // program counter
     pub IME: bool,  // interrupt master enable
+    pub EI: bool,   // pending enable interrupt
 
     pub memory: Memory,
     pub halt: bool
@@ -46,6 +47,7 @@ impl CPU {
             SP: 0xFFFE,
             PC: 0x100,
             IME: false,
+            EI: false,
 
             memory: Memory::new(),
             halt: false
@@ -178,6 +180,10 @@ impl CPU {
     }
 
     pub fn tick(&mut self) -> u8 {
+        if self.EI {
+            self.IME = true;
+        }
+
         let inst = self.load_u8();
         execute(self, inst)
     }
