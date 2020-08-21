@@ -869,6 +869,56 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             }
         },
 
+        // CALL nn
+        0xCD => {
+            let val = cpu.load_u16();
+            PUSH(cpu, cpu.PC);
+            cpu.PC = val;
+            6
+        },
+
+        // CALL cc, nn
+        0xC4 => {
+            let val = cpu.load_u16();
+            if !cpu.get_flag(Flag::Z) {
+                PUSH(cpu, cpu.PC);
+                cpu.PC = val;
+                6 
+            } else {
+                3
+            }
+        },
+        0xCC => {
+            let val = cpu.load_u16();
+            if cpu.get_flag(Flag::Z) {
+                PUSH(cpu, cpu.PC);
+                cpu.PC = val;
+                6 
+            } else {
+                3
+            }
+        },
+        0xD4 => {
+            let val = cpu.load_u16();
+            if !cpu.get_flag(Flag::C) {
+                PUSH(cpu, cpu.PC);
+                cpu.PC = val;
+                6 
+            } else {
+                3
+            }
+        },
+        0xDC => {
+            let val = cpu.load_u16();
+            if cpu.get_flag(Flag::C) {
+                PUSH(cpu, cpu.PC);
+                cpu.PC = val;
+                6 
+            } else {
+                3
+            }
+        },
+
         // NOP
         0x00 => { 1 },
 
