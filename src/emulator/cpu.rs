@@ -154,6 +154,29 @@ impl CPU {
         (val, instr == 6)
     }
 
+    pub fn set_reg(&mut self, instr: u8, val: u8) {
+        let instr = if instr & 0x0f > 7 {
+            (instr & 0x0f) - 8
+        } else {
+            instr & 0x0f
+        };
+
+        match instr {
+            0 => *self.B() = val,
+            1 => *self.C() = val,
+            2 => *self.D() = val,
+            3 => *self.E() = val,
+            4 => *self.H() = val,
+            5 => *self.L() = val,
+            6 => {
+                let addr = *self.HL();
+                self.memory.write(addr, val);
+            },
+            7 => *self.A() = val,
+            _ => panic!()
+        };
+    }
+
     pub fn tick(&mut self) -> u8 {
         let inst = self.load_u8();
         execute(self, inst)

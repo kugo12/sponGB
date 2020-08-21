@@ -780,6 +780,38 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         0xCB => {
             let cbinst = cpu.load_u8();
             match cbinst {
+                // RLC
+                0x00 ..= 0x07 => {
+                    let (mut val, hl) = cpu.get_val_reg(cbinst);
+                    val = RLC(cpu, val);
+                    cpu.set_reg(cbinst, val);
+                    if hl { 4 } else { 2 }
+                },
+
+                // RRC
+                0x08 ..= 0x0F => {
+                    let (mut val, hl) = cpu.get_val_reg(cbinst);
+                    val = RRC(cpu, val);
+                    cpu.set_reg(cbinst, val);
+                    if hl { 4 } else { 2 }
+                },
+
+                // RL
+                0x10 ..= 0x17 => {
+                    let (mut val, hl) = cpu.get_val_reg(cbinst);
+                    val = RL(cpu, val);
+                    cpu.set_reg(cbinst, val);
+                    if hl { 4 } else { 2 }
+                },
+
+                // RR
+                0x18 ..= 0x1F => {
+                    let (mut val, hl) = cpu.get_val_reg(cbinst);
+                    val = RR(cpu, val);
+                    cpu.set_reg(cbinst, val);
+                    if hl { 4 } else { 2 }
+                },
+
                 _ => {
                     println!("0x{:x}{:x} not implemented", inst, cbinst);
                     1
