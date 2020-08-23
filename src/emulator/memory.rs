@@ -154,6 +154,13 @@ impl Memory {
 
     pub fn write(&mut self, addr: u16, val: u8) {
         match addr {
+            // 0xff02 if val == 0x81 => { // intercept serial 
+            //     let v = self.read(0xff01);
+            //     if v != 0 {
+            //         print!("{}-{} ", v, v as char); 
+            //     }
+            //     self.io[0x2] = 0;
+            // }
             0x0000..=0x7fff => {
                 self.cart.write_rom(addr, val)
             },

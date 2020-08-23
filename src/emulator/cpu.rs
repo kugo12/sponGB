@@ -39,14 +39,14 @@ pub struct CPU {
 impl CPU {
     pub fn new() -> CPU {
         CPU {
-            reg_af: Register { ab: 0 },
-            reg_bc: Register { ab: 0 },
-            reg_de: Register { ab: 0 },
-            reg_hl: Register { ab: 0 },
+            reg_af: Register { ab: 0x01B0 },
+            reg_bc: Register { ab: 0x0013 },
+            reg_de: Register { ab: 0x00D8 },
+            reg_hl: Register { ab: 0x014D },
 
             SP: 0xFFFE,
-            PC: 0x100,
-            IME: false,
+            PC: 0x0100,
+            IME: true,
             EI: false,
 
             memory: Memory::new(),
@@ -186,5 +186,16 @@ impl CPU {
 
         let inst = self.load_u8();
         execute(self, inst)
+    }
+
+    pub fn run(&mut self) {
+        let mut cycles_left = 0;
+        loop {
+            if cycles_left > 0 {
+                cycles_left -= 1;
+            } else {
+                cycles_left = self.tick();
+            }
+        }
     }
 }

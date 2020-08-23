@@ -104,8 +104,8 @@ fn SUB(cpu: &mut CPU, instr: u8) -> u8 {
 
     cpu.set_flag(Flag::Z, tmp == 0);
     cpu.set_flag(Flag::N, true);
-    cpu.set_flag(Flag::H, !hc);
-    cpu.set_flag(Flag::C, !c);
+    cpu.set_flag(Flag::H, hc);
+    cpu.set_flag(Flag::C, c);
 
     match more_cycles {
         true => 2,
@@ -129,8 +129,8 @@ fn SBC(cpu: &mut CPU, instr: u8) -> u8 {
 
     cpu.set_flag(Flag::Z, tmp == 0);
     cpu.set_flag(Flag::N, true);
-    cpu.set_flag(Flag::H, !hc);
-    cpu.set_flag(Flag::C, !c);
+    cpu.set_flag(Flag::H, hc);
+    cpu.set_flag(Flag::C, c);
 
     match more_cycles {
         true => 2,
@@ -218,8 +218,8 @@ fn CP(cpu: &mut CPU, instr: u8) -> u8 {
 
     cpu.set_flag(Flag::Z, z);
     cpu.set_flag(Flag::N, true);
-    cpu.set_flag(Flag::H, !hc);
-    cpu.set_flag(Flag::C, !c);
+    cpu.set_flag(Flag::H, hc);
+    cpu.set_flag(Flag::C, c);
 
     match more_cycles {
         true => 2,
@@ -309,7 +309,7 @@ fn ADDTOHL(cpu: &mut CPU, inst: u8) {
     let hc = ((*cpu.HL()&0xFFF) + (val&0xFFF)) & 0x1000 == 0x1000;
     *cpu.HL() = tmp;
 
-    cpu.set_flag(Flag::N, true);
+    cpu.set_flag(Flag::N, false);
     cpu.set_flag(Flag::H, hc);
     cpu.set_flag(Flag::C, c);
 }
@@ -392,6 +392,11 @@ fn RR(cpu: &mut CPU, mut val: u8) -> u8 {
 
 pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
     match inst {
+        // STOP
+        0x10 => {
+            1  // TODO
+        }
+
         // HALT
         0x76 => {
             cpu.halt = true;
@@ -480,13 +485,13 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         0x2A => {
             let addr = *cpu.HL();
             *cpu.A() = cpu.memory.read(addr);
-            *cpu.HL() += 1;
+            *cpu.HL() = cpu.HL().wrapping_add(1);
             2
         },
         0x3A => {
             let addr = *cpu.HL();
             *cpu.A() = cpu.memory.read(addr);
-            *cpu.HL() -= 1;
+            *cpu.HL() = cpu.HL().wrapping_sub(1);
             2
         },
 
@@ -677,37 +682,37 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
 
         // INC 16bit
         0x03 => {
-            *cpu.BC() += 1;
+            *cpu.BC() = cpu.BC().wrapping_add(1);
             2
         },
         0x13 => {
-            *cpu.DE() += 1;
+            *cpu.DE() = cpu.DE().wrapping_add(1);
             2
         },
         0x23 => {
-            *cpu.HL() += 1;
+            *cpu.HL() = cpu.HL().wrapping_add(1);
             2
         },
         0x33 => {
-            cpu.SP += 1;
+            cpu.SP = cpu.SP.wrapping_add(1);
             2
         }
 
         // DEC 16bit
         0x0B => {
-            *cpu.BC() -= 1;
+            *cpu.BC() = cpu.BC().wrapping_sub(1);
             2
         },
         0x1B => {
-            *cpu.DE() -= 1;
+            *cpu.DE() = cpu.DE().wrapping_sub(1);
             2
         },
         0x2B => {
-            *cpu.HL() -= 1;
+            *cpu.HL() = cpu.HL().wrapping_sub(1);
             2
         },
         0x3B => {
-            cpu.SP -= 1;
+            cpu.SP = cpu.SP.wrapping_sub(1);
             2
         },
 
@@ -1148,8 +1153,8 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         }
 
         _ => {
-            println!("0x{:x} not implemented", inst);
-            1
+            println!("\n0x{:x} not implemented", inst);
+            panic!()
         }
     }
 }
