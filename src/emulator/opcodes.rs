@@ -31,14 +31,14 @@ fn LDRR(cpu: &mut CPU, instr: u8) -> u8 {
 fn PUSH(cpu: &mut CPU, val: u16) {
     cpu.memory.write(cpu.SP - 1, (val >> 8) as u8);
     cpu.memory.write(cpu.SP - 2, val as u8);
-    cpu.SP -= 2;
+    cpu.SP = cpu.SP.wrapping_sub(2);
 }
 
 
 fn POP(cpu: &mut CPU) -> u16 {
     let lsb = cpu.memory.read(cpu.SP) as u16;
     let msb = cpu.memory.read(cpu.SP + 1) as u16;
-    cpu.SP += 2;
+    cpu.SP = cpu.SP.wrapping_add(2);
     (msb << 8) | lsb
 }
 

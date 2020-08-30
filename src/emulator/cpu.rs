@@ -190,12 +190,19 @@ impl CPU {
 
     pub fn run(&mut self) {
         let mut cycles_left = 0;
+
+        if self.memory.cart.bootrom_enable {
+            self.PC = 0;
+        }
+
         loop {
             if cycles_left > 0 {
                 cycles_left -= 1;
-            } else {
-                cycles_left = self.tick();
             }
+            if cycles_left <= 0 {
+                cycles_left = self.tick()*4;
+            }
+            self.memory.tick();
         }
     }
 }
