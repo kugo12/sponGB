@@ -107,7 +107,7 @@ impl Draw {
             .size(160*2, (144+192+1)*2)
             .title("Gameboy emulator")
             .build();
-        handle.set_target_fps(60);
+        // handle.set_target_fps(60);
 
         let mut img = Image::gen_image_color(160, 144, Color::BLACK);
         img.set_format(raylib::ffi::PixelFormat::UNCOMPRESSED_R8G8B8);
@@ -382,7 +382,7 @@ impl PPU {
             match self.fetcher.mode {
                 TILE_DATA => {
                     if self.fetcher.cycles == 1 {
-                        let mut pos = ((self.ly as u16 + self.scy as u16)/8) * 32 + self.fetcher.lx as u16;
+                        let mut pos = ((self.ly.wrapping_add(self.scy) as u16)/8) * 32 + self.fetcher.lx as u16;
                         pos = match self.bg_tilemap {
                             false => 0x1800 + pos,
                             true => 0x1C00 + pos,

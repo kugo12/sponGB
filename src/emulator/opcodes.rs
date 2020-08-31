@@ -319,18 +319,19 @@ fn DAA(cpu: &mut CPU) {
     let mut val = *cpu.A();
 
     if cpu.get_flag(Flag::N) {
-        if cpu.get_flag(Flag::H) {
-            val = val.wrapping_sub(0x6);
-        }
         if cpu.get_flag(Flag::C) {
             val = val.wrapping_sub(0x60);
         }
-    } else {
-        if cpu.get_flag(Flag::H) || val&0xF > 0x9 {
-            val = val.wrapping_add(0x6);
+        if cpu.get_flag(Flag::H) {
+            val = val.wrapping_sub(0x6);
         }
-        if cpu.get_flag(Flag::C) || val>0x9F {
+    } else {
+        if cpu.get_flag(Flag::C) || val>0x99 {
             val = val.wrapping_add(0x60);
+            cpu.set_flag(Flag::C, true);
+        }
+        if cpu.get_flag(Flag::H) || (val&0xF) > 0x9 {
+            val = val.wrapping_add(0x6);
         }
     }
 
@@ -356,7 +357,7 @@ fn RL(cpu: &mut CPU, mut val: u8) -> u8 {
     let c = cpu.get_flag(Flag::C) as u8;
     val = val.rotate_left(1);
 
-    cpu.set_flag(Flag::Z, val == 0);
+    cpu.set_flag(Flag::Z, (val & 0b11111110) | c == 0);
     cpu.set_flag(Flag::N, false);
     cpu.set_flag(Flag::H, false);
     cpu.set_flag(Flag::C, (val&0x1) == 1);
@@ -382,7 +383,7 @@ fn RR(cpu: &mut CPU, mut val: u8) -> u8 {
     cpu.set_flag(Flag::C, (val&0x1) == 1);
     val = val.rotate_right(1);
 
-    cpu.set_flag(Flag::Z, val == 0);
+    cpu.set_flag(Flag::Z, (val & 0b01111111) | c == 0);
     cpu.set_flag(Flag::N, false);
     cpu.set_flag(Flag::H, false);
 
@@ -561,7 +562,7 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             cpu.set_flag(Flag::N, false);
             cpu.set_flag(Flag::H, ((sp&0xF)+(n&0xF)) & 0x10 == 0x10);
             cpu.set_flag(Flag::C, ((sp&0xFF)+(n&0xFF)) & 0x100 == 0x100);
-            *cpu.HL() = (sp + n) as u16;
+            *cpu.HL() = sp.wrapping_add(n) as u16;
             3
         },
 
@@ -596,7 +597,7 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
 
         // POP
         0xF1 => {
-            *cpu.AF() = POP(cpu);
+            *cpu.AF() = POP(cpu)&0xFFF0;
             3
         },
         0xC1 => {
@@ -676,7 +677,7 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             cpu.set_flag(Flag::N, false);
             cpu.set_flag(Flag::H, ((sp&0xF)+(n&0xF)) & 0x10 == 0x10);
             cpu.set_flag(Flag::C, ((sp&0xFF)+(n&0xFF)) & 0x100 == 0x100);
-            cpu.SP = (sp + n) as u16;
+            cpu.SP = sp.wrapping_add(n) as u16;
             4
         },
 
@@ -752,6 +753,7 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             let mut val = *cpu.A();
             val = RLC(cpu, val);
             *cpu.A() = val;
+            cpu.set_flag(Flag::Z, false);
             1
         },
 
@@ -760,6 +762,7 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             let mut val = *cpu.A();
             val = RL(cpu, val);
             *cpu.A() = val;
+            cpu.set_flag(Flag::Z, false);
             1
         },
 
@@ -768,6 +771,7 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             let mut val = *cpu.A();
             val = RRC(cpu, val);
             *cpu.A() = val;
+            cpu.set_flag(Flag::Z, false);
             1
         },
 
@@ -776,6 +780,7 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
             let mut val = *cpu.A();
             val = RR(cpu, val);
             *cpu.A() = val;
+            cpu.set_flag(Flag::Z, false);
             1
         },
 
