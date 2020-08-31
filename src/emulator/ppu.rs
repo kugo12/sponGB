@@ -382,8 +382,8 @@ impl PPU {
             match self.fetcher.mode {
                 TILE_DATA => {
                     if self.fetcher.cycles == 1 {
-                        let mut pos = (self.ly as u16/8) * 32 + self.fetcher.lx as u16;
-                        pos = match self.bg_tilemap {  // false
+                        let mut pos = ((self.ly as u16 + self.scy as u16)/8) * 32 + self.fetcher.lx as u16;
+                        pos = match self.bg_tilemap {
                             false => 0x1800 + pos,
                             true => 0x1C00 + pos,
                         };
@@ -395,9 +395,9 @@ impl PPU {
                 },
                 TILE_LOW => {
                     if self.fetcher.cycles == 3 {
-                        let pos = match self.bg_window_tiledata { // true
-                            true => self.fetcher.data[0] as u16 * 16 + (self.ly as u16 % 8) * 2,
-                            false => ((0x1000 as i16) + (self.fetcher.data[0] as i8 as i16 * 16)) as u16 + (self.ly as u16 % 8) * 2,
+                        let pos = match self.bg_window_tiledata {
+                            true => self.fetcher.data[0] as u16 * 16 + ((self.ly as u16 + self.scy as u16) % 8) * 2,
+                            false => ((0x1000 as i16) + (self.fetcher.data[0] as i8 as i16 * 16)) as u16 + ((self.ly as u16 + self.scy as u16) % 8) * 2,
                         };
                         self.fetcher.data[1] = vram[pos as usize];
                     
@@ -408,8 +408,8 @@ impl PPU {
                 TILE_HIGH => {
                     if self.fetcher.cycles == 5 {
                         let pos = match self.bg_window_tiledata {
-                            true => self.fetcher.data[0] as u16 * 16 + (self.ly as u16 % 8) * 2,
-                            false => ((0x1000 as i16) + (self.fetcher.data[0] as i8 as i16 * 16)) as u16 + (self.ly as u16 % 8) * 2,
+                            true => self.fetcher.data[0] as u16 * 16 + ((self.ly as u16 + self.scy as u16) % 8) * 2,
+                            false => ((0x1000 as i16) + (self.fetcher.data[0] as i8 as i16 * 16)) as u16 + ((self.ly as u16 + self.scy as u16) % 8) * 2,
                         };
                         self.fetcher.data[2] = vram[(pos+1) as usize];
                     
