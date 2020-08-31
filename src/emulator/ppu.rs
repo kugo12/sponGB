@@ -87,39 +87,85 @@ fn map_color(color: u8) -> Color {
 
 
 pub struct Draw {
-    handle: RaylibHandle,
-    thread: RaylibThread,
+    pub handle: RaylibHandle,
+    pub thread: RaylibThread,
     txt: Texture2D,
-    frame: [u8; 144*160*4],
+    frame: [u8; 144*160*3],
+
+    tiles: Texture2D,
+    tile_arr: Box<[u8; 192*128*3]>,
+
+    tiles_dest_rect: Rectangle,
+    frame_dest_rect: Rectangle,
+    tiles_src_rect: Rectangle,
+    frame_src_rect: Rectangle
 }
 
 impl Draw {
     pub fn new() -> Draw {
         let (mut handle, thread) = raylib::init()
-            .size(160, 144)
+            .size(160*2, (144+192+1)*2)
             .title("Gameboy emulator")
             .build();
+        handle.set_target_fps(60);
 
-        let img = Image::gen_image_color(160, 144, Color::BLACK);
+        let mut img = Image::gen_image_color(160, 144, Color::BLACK);
+        img.set_format(raylib::ffi::PixelFormat::UNCOMPRESSED_R8G8B8);
         let txt = handle.load_texture_from_image(&thread, &img).expect("Couldnt load texture from image");
+
+        
+        let mut img = Image::gen_image_color(128, 192, Color::BLACK);
+        img.set_format(raylib::ffi::PixelFormat::UNCOMPRESSED_R8G8B8);
+        let tiles = handle.load_texture_from_image(&thread, &img).expect("Couldnt load texture from image");
         
         Draw {
             handle: handle,
             thread: thread,
             txt: txt,
-            frame: [0; 144*160*4]
+            frame: [0; 144*160*3],
+            tiles: tiles,
+            tile_arr: Box::new([0; 192*128*3]),
+
+            tiles_dest_rect: Rectangle::new(0., 144.*2.+1., 256., 192.*2.),
+            frame_dest_rect: Rectangle::new(0., 0., 160.*2., 144.*2.),
+            tiles_src_rect: Rectangle::new(0., 0., 128., 192.),
+            frame_src_rect: Rectangle::new(0., 0., 160., 144.),
         }
     }
 
-    pub fn new_frame(&mut self) {
+    pub fn new_frame(&mut self, vram: &[u8]) {
+        self.draw_vram_tiles(vram);
+        self.tiles.update_texture(self.tile_arr.as_ref());
+
         self.txt.update_texture(&self.frame);
         let mut d = self.handle.begin_drawing(&self.thread);
-        d.clear_background(Color::BLACK);
-        d.draw_texture(&self.txt, 0, 0, Color::GRAY);
+        d.clear_background(Color::WHITE);
+        d.draw_texture_pro(&self.txt, self.frame_src_rect, self.frame_dest_rect, Vector2::new(0., 0.), 0., Color::WHITE);
+        d.draw_texture_pro(&self.tiles, self.tiles_src_rect, self.tiles_dest_rect, Vector2::new(0., 0.), 0., Color::WHITE);
+    }
+
+    fn draw_vram_tiles(&mut self, vram: &[u8]) {
+        let mut vram_pos: usize;
+        let mut pixel_pos: usize;
+        'a: for i in 0 ..= 192 {
+            for j in 0 ..= 15 {
+                vram_pos = (i / 8) * 256 + j*16 + (i%8)*2;
+                if vram_pos > 0x17FF { break 'a; }
+                pixel_pos = (j*8 + i*128)*3;
+                let p = compose_two_bytes(vram[vram_pos], vram[vram_pos+1]);
+                for pix in p.iter() {
+                    let a = map_color(*pix);
+                    self.tile_arr[pixel_pos] = a.r;
+                    self.tile_arr[pixel_pos+1] = a.g;
+                    self.tile_arr[pixel_pos+2] = a.b;
+                    pixel_pos += 3;
+                }
+            }
+        }
     }
 
     pub fn draw_pixel(&mut self, x: u8, y: u8, color: Color) {
-        let pos = (y as usize * 160 + x as usize)*4;
+        let pos = (y as usize * 160 + x as usize)*3;
         self.frame[pos] = color.r;
         self.frame[pos+1] = color.g;
         self.frame[pos+2] = color.b;
@@ -159,7 +205,7 @@ impl Fetcher {
 pub struct PPU {
     mode: PPU_MODE,
     cycles: u16,
-    d: Draw,
+    pub d: Draw,
 
     // lcdc bools
     lcd_enabled: bool,
@@ -322,7 +368,7 @@ impl PPU {
                     if self.ly == 154 {
                         self.mode = OAM;
                         self.ly = 0;
-                        self.d.new_frame();
+                        self.d.new_frame(vram);
                     }
                 } else { self.cycles += 1; }
             }
@@ -337,9 +383,9 @@ impl PPU {
                 TILE_DATA => {
                     if self.fetcher.cycles == 1 {
                         let mut pos = (self.ly as u16/8) * 32 + self.fetcher.lx as u16;
-                        pos = match self.bg_tilemap {
-                            true => 0x1800 + pos,
-                            false => 0x1C00 + pos,
+                        pos = match self.bg_tilemap {  // false
+                            false => 0x1800 + pos,
+                            true => 0x1C00 + pos,
                         };
                         self.fetcher.data[0] = vram[pos as usize];
                     
@@ -349,7 +395,7 @@ impl PPU {
                 },
                 TILE_LOW => {
                     if self.fetcher.cycles == 3 {
-                        let pos = match self.bg_window_tiledata {
+                        let pos = match self.bg_window_tiledata { // true
                             true => self.fetcher.data[0] as u16 * 16 + (self.ly as u16 % 8) * 2,
                             false => ((0x1000 as i16) + (self.fetcher.data[0] as i8 as i16 * 16)) as u16 + (self.ly as u16 % 8) * 2,
                         };
@@ -384,7 +430,7 @@ impl PPU {
                         }
 
                         self.fetcher.cycles += 1;
-                    } else { self.fetcher.mode = TILE_DATA; self.fetcher.cycles = 0; self.fetcher.lx += 1; }
+                    } else { self.fetcher.mode = TILE_DATA; self.fetcher.cycles = 0; self.fetcher.lx += 1; self.fetcher.data = [0; 3]; }
                 }
             }
         }
@@ -408,7 +454,6 @@ impl PPU {
             self.d.draw_pixel(self.fetcher.current_pixel_push, self.ly, color);
             self.fetcher.current_pixel_push += 1;
         } else if self.fetcher.lx == 20 {
-            // println!("{}", self.ly);
             return false;
         }
         true

@@ -11,7 +11,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     c.memory.cart.load_from_file(&r)?;
     c.memory.cart.load_bootrom(&p)?;
     
-    // println!("{}", c.memory.cart.title);
+    {
+        let h = &c.memory.ppu.d.thread;
+        c.memory.ppu.d.handle.set_window_title(h, &c.memory.cart.title);
+    }
+    println!("{}", c.memory.cart.title);
     c.run();
     Ok(())
 }

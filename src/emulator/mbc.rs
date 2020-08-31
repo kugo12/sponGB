@@ -117,7 +117,7 @@ impl MemoryBankController for MBC1 {
             },
             0x4000 ..= 0x7FFF => {
                 let bank = if self.banking_mode {
-                    (self.bank & 0b00011111) as usize
+                    self.bank as usize & 0b00011111
                 } else { self.bank as usize };
                 
                 self.rom[addr as usize + 0x4000*bank]

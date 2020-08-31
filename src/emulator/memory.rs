@@ -119,7 +119,7 @@ impl Cartridge {
 
 pub struct Memory {
     pub cart: Cartridge,  // ROM -> 0x0000-0x7FFF 32kB, RAM -> 0xA000-0xBFFF 8kB
-    ppu: PPU,
+    pub ppu: PPU,
     vram: [u8; 8192],  // 0x8000 - 0x9FFF 8kB
     ram: [u8; 8192], // 0xC000 - 0xDFFF 8kB + echo at 0xE000 - 0xFDFF
     OAM: [u8; 160],  // 0xFE00 - 0xFE9F sprite attribute memory

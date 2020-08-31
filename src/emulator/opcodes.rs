@@ -206,7 +206,7 @@ fn XOR(cpu: &mut CPU, instr: u8) -> u8 {
 
 
 fn CP(cpu: &mut CPU, instr: u8) -> u8 {
-    let (val, more_cycles) = if instr == 0xEE {
+    let (val, more_cycles) = if instr == 0xFE {
         (cpu.load_u8(), true)
     } else {
         cpu.get_val_reg(instr)
@@ -270,7 +270,7 @@ fn DEC(cpu: &mut CPU, inst: u8) -> u8 {
             let tmp = val.wrapping_sub(1);
             cpu.memory.write(addr, tmp);
 
-            (val < 1, tmp == 0, 3)
+            (val&0x0F == 0, tmp == 0, 3)
         } else {
             let val = match inst {
                 0x05 => cpu.B(),
@@ -286,11 +286,11 @@ fn DEC(cpu: &mut CPU, inst: u8) -> u8 {
             let tmp = *val;
             *val = val.wrapping_sub(1);
 
-            (tmp < 1, *val == 0, 1)
+            (tmp&0x0F  == 0, *val == 0, 1)
         }
     };
     cpu.set_flag(Flag::N, true);
-    cpu.set_flag(Flag::H, !h);
+    cpu.set_flag(Flag::H, h);
     cpu.set_flag(Flag::Z, z);
     cycles
 }
@@ -634,7 +634,7 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
 
         // AND
         0xA0 ..= 0xA7 | 0xE6 => {
-            ADD(cpu, inst)
+            AND(cpu, inst)
         },
         
         // XOR
@@ -1153,8 +1153,7 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         }
 
         _ => {
-            println!("\n0x{:x} not implemented", inst);
-            panic!()
+            panic!("0x{:x} not implemented (at 0x{:x} PC)", inst, cpu.PC)
         }
     }
 }
@@ -1179,6 +1178,28 @@ mod tests {
         opc.push(0x76);
         c.memory.cart.load_from_vec(opc);
         c
+    }
+
+    #[test]
+    fn push_pop() {
+        use crate::emulator::opcodes::{PUSH, POP};
+
+        let mut cpu = CPU::new();
+        let begin = cpu.SP;
+        PUSH(&mut cpu, 0x1234);
+        assert_eq!(cpu.SP, begin - 2);
+        let a = POP(&mut cpu);
+        assert_eq!(a, 0x1234);
+        assert_eq!(begin, cpu.SP);
+    }
+
+    #[test]
+    fn loadu16() {
+        let mut cpu = cpu_init(vec![0x34, 0x12]);
+        let b_pc = cpu.PC;
+        let a = cpu.load_u16();
+        assert_eq!(a, 0x1234); 
+        assert_eq!(cpu.PC, b_pc+2);
     }
     
     #[test]
