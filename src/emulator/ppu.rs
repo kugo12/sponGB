@@ -330,7 +330,10 @@ impl PPU {
         match self.mode {
             OAM => {
                 if self.cycles == 79 { self.mode = DRAW; self.stat |= 0b11; }
-                if self.cycles == 0 { self.stat = self.stat&0b11111100 | 0b10; }
+                if self.cycles == 0 {
+                    self.stat = self.stat&0b11111100 | 0b10;
+                    if self.stat&0x20 != 0 { *IF |= 0b10; }
+                }
                 
                 if self.cycles % 2 == 0 && self.sprites.len() < 10 {
                     let oam_pos = self.cycles as usize * 2;
@@ -345,6 +348,7 @@ impl PPU {
                 let a = self.fetcher_tick(vram, oam);
                 if !a {
                     self.mode = HBLANK;
+                    if self.stat&0x08 != 0 { *IF |= 0b10; }
                     self.stat = self.stat&0b11111100;
                 }
                 self.cycles += 1;
@@ -353,10 +357,22 @@ impl PPU {
                 if self.cycles == 456 {
                     self.cycles = 0;
                     self.ly += 1;
+                    if self.stat&0x40 != 0 {
+                        if self.ly == self.lyc {
+                            *IF |= 0b10;
+                        }
+                    }
+                    if self.ly == self.lyc {
+                        self.stat |= 0b100;
+                    } else {
+                        self.stat &= !0b100;
+                    }
                     self.fetcher = Fetcher::new();
 
                     if self.ly == 144 {
                         self.mode = VBLANK;
+                        *IF |= 0b00000001;
+                        if self.stat&0x10 != 0 { *IF |= 0b10; }
                         self.stat = self.stat&0b11111100 | 0b1;
                     } else {
                         self.mode = OAM;
@@ -368,13 +384,22 @@ impl PPU {
                 if self.cycles == 456 {
                     self.cycles = 0;
                     self.ly += 1;
+                    if self.stat&0x40 != 0 {
+                        if self.ly == self.lyc {
+                            *IF |= 0b10;
+                        }
+                    }
+                    if self.ly == self.lyc {
+                        self.stat |= 0b100;
+                    } else {
+                        self.stat &= !0b100;
+                    }
                     if self.ly == 154 {
                         self.mode = OAM;
                         self.ly = 0;
                         self.d.new_frame(vram);
                     }
                 } else {
-                    if self.cycles == 0 { *IF |= 0b00000001; }
                     self.cycles += 1;
                 }
             }
@@ -384,11 +409,11 @@ impl PPU {
     pub fn fetcher_tick(&mut self, vram: &[u8], oam: &[u8]) -> bool {
         use FetcherMode::*;
 
-        if self.fetcher.lx != 20 {
+        if self.fetcher.lx != 160 {
             match self.fetcher.mode {
                 TILE_DATA => {
                     if self.fetcher.cycles == 1 {
-                        let mut pos = ((self.ly.wrapping_add(self.scy) as u16)/8) * 32 + self.fetcher.lx as u16;
+                        let mut pos = ((self.ly.wrapping_add(self.scy) as u16)/8) * 32 + (self.fetcher.lx.wrapping_add(self.scx)/8) as u16;
                         pos = match self.bg_tilemap {
                             false => 0x1800 + pos,
                             true => 0x1C00 + pos,
@@ -436,7 +461,7 @@ impl PPU {
                         }
 
                         self.fetcher.cycles += 1;
-                    } else { self.fetcher.mode = TILE_DATA; self.fetcher.cycles = 0; self.fetcher.lx += 1; self.fetcher.data = [0; 3]; }
+                    } else { self.fetcher.mode = TILE_DATA; self.fetcher.cycles = 0; self.fetcher.lx += 8; self.fetcher.data = [0; 3]; }
                 }
             }
         }
@@ -459,7 +484,7 @@ impl PPU {
 
             self.d.draw_pixel(self.fetcher.current_pixel_push, self.ly, color);
             self.fetcher.current_pixel_push += 1;
-        } else if self.fetcher.lx == 20 {
+        } else if self.fetcher.lx >= 159 {
             return false;
         }
         true

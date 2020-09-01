@@ -12,6 +12,10 @@ fn rom_size(val: u8) -> Result<usize, &'static str> {
     Err(&"Invalid ROM size")
 }
 
+fn rom_banks(val: u8) -> u8 {
+    2 << val
+}
+
 fn ram_size(val: u8) -> Result<usize, &'static str> {
     match val {
         0x00 => Ok(0),
@@ -79,6 +83,7 @@ pub struct MBC1 {
     ram_enabled: bool,
     bank: u8,
     banking_mode: bool,  // false -> rom, true -> ram
+    bitmask: u8,
     battery: bool,
 }
 
@@ -86,10 +91,23 @@ impl MBC1 {
     const MAX_ROM_SIZE: usize = 2*1024*1024;  // 2MB (in bytes)
     const MAX_RAM_SIZE: usize = 32*1024;      // 32kB (in bytes)
 
+    fn gen_bitmask(val: u8) -> u8 {
+        match rom_banks(val) {
+            4 =>   0b00000011,
+            8 =>   0b00000111,
+            16 =>  0b00001111,
+            32 =>  0b00011111,
+            64 =>  0b00011111,
+            128 => 0b00011111,
+            v => panic!("Unexpected MBC1 rom bank value {} from {}", v, val)
+        }
+    }
+
     pub fn new(data: Vec<u8>) -> Result<Box<MBC1>, &'static str> {
         let ram_s = ram_size(data[0x149])?;
         let rom_s = rom_size(data[0x148])?;
         let bat = data[0x147] == 0x03;
+        let bitmask = MBC1::gen_bitmask(data[0x148]);
 
         if ram_s > MBC1::MAX_RAM_SIZE {
             return Err(&"header ram size too big for MBC1")
@@ -104,6 +122,7 @@ impl MBC1 {
             ram_enabled: false,
             bank: 0,
             banking_mode: false,
+            bitmask: bitmask,
             battery: bat
         }))
     }
@@ -120,7 +139,7 @@ impl MemoryBankController for MBC1 {
                     self.bank as usize & 0b00011111
                 } else { self.bank as usize };
                 
-                self.rom[addr as usize + 0x4000*bank]
+                self.rom[addr as usize + 0x4000*(bank-1)]
             },
             _ => panic!()
         }
@@ -133,7 +152,7 @@ impl MemoryBankController for MBC1 {
             },
             0x2000 ..= 0x3FFF => {
                 if val&0x1F == 0 { val = 1 }
-                self.bank = self.bank&0xE0 | val&0x1F;
+                self.bank = self.bank&0xE0 | val&self.bitmask;
             },
             0x4000 ..= 0x5FFF => {
                 val = val.rotate_right(3);

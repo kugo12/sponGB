@@ -238,6 +238,14 @@ impl Memory {
             0xFE00 ..= 0xFE9F => {
                 self.OAM[(addr-0xfe00) as usize] = val
             },
+            0xFF46 => {  // TODO: real timings, not instant
+                let mut pos = (val as u16) << 8;
+                loop {
+                    self.OAM[pos as usize&0xFF] = self.read(pos);
+                    if pos&0xFF == 0x9F { break }
+                    pos += 1;
+                }
+            }
             0xFF0F => self.IF = val,
             0xFF40 ..= 0xFF4B => {
                 self.ppu.write(addr, val)
