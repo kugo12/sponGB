@@ -329,7 +329,8 @@ impl PPU {
 
         match self.mode {
             OAM => {
-                if self.cycles == 79 { self.mode = DRAW }
+                if self.cycles == 79 { self.mode = DRAW; self.stat |= 0b11; }
+                if self.cycles == 0 { self.stat = self.stat&0b11111100 | 0b10; }
                 
                 if self.cycles % 2 == 0 && self.sprites.len() < 10 {
                     let oam_pos = self.cycles as usize * 2;
@@ -344,6 +345,7 @@ impl PPU {
                 let a = self.fetcher_tick(vram, oam);
                 if !a {
                     self.mode = HBLANK;
+                    self.stat = self.stat&0b11111100;
                 }
                 self.cycles += 1;
             },
@@ -355,6 +357,7 @@ impl PPU {
 
                     if self.ly == 144 {
                         self.mode = VBLANK;
+                        self.stat = self.stat&0b11111100 | 0b1;
                     } else {
                         self.mode = OAM;
                         self.sprites = vec![];  // clear oam sprite buffer
@@ -370,7 +373,10 @@ impl PPU {
                         self.ly = 0;
                         self.d.new_frame(vram);
                     }
-                } else { self.cycles += 1; }
+                } else {
+                    if self.cycles == 0 { *IF |= 0b00000001; }
+                    self.cycles += 1;
+                }
             }
         }
     }

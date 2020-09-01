@@ -28,7 +28,7 @@ fn LDRR(cpu: &mut CPU, instr: u8) -> u8 {
 }
 
 
-fn PUSH(cpu: &mut CPU, val: u16) {
+pub fn PUSH(cpu: &mut CPU, val: u16) {
     cpu.memory.write(cpu.SP - 1, (val >> 8) as u8);
     cpu.memory.write(cpu.SP - 2, val as u8);
     cpu.SP = cpu.SP.wrapping_sub(2);

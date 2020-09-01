@@ -6,6 +6,8 @@ use std::error::Error;
 use crate::emulator::mbc;
 use crate::emulator::PPU;
 
+const tima_speed: [u16; 4] = [1024, 16, 64, 256];
+
 pub struct Cartridge {
     rom: Box<dyn mbc::MemoryBankController>,
     pub bootrom: Vec<u8>,
@@ -125,8 +127,18 @@ pub struct Memory {
     OAM: [u8; 160],  // 0xFE00 - 0xFE9F sprite attribute memory
     io: [u8; 128],  // 0xFF00 - 0xFF7F i/o ports
     hram: [u8; 127],  // 0xFF80 - 0xFFFE high ram
-    IF: u8,  // interrupt flag 0xFF0F
-    IER: u8  // interrupt enable register 0xFFFF
+    pub IF: u8,  // interrupt flag 0xFF0F
+    pub IER: u8,  // interrupt enable register 0xFFFF
+
+    // timer registers
+    div_tick: u16,
+    tima_tick: u16,
+    DIV: u8,  // FF04
+    TIMA: u8, // FF05
+    TMA: u8,  // FF06
+    TAC: u8,  // FF07
+
+    input: u8
 }
 
 impl Memory {
@@ -140,7 +152,16 @@ impl Memory {
             io: [0; 128],
             hram: [0; 127],
             IF: 0,
-            IER: 0
+            IER: 0,
+
+            div_tick: 0,
+            tima_tick: 0,
+            DIV: 0,
+            TIMA: 0,
+            TMA: 0,
+            TAC: 0,
+
+            input: 0x0F
         }
     }
 
@@ -171,7 +192,12 @@ impl Memory {
             0xFF40 ..= 0xFF4B => {
                 self.ppu.read(addr)
             },
-            0xFF00 ..= 0xFF7F => {
+            0xFF00 => self.input,
+            0xFF04 => self.DIV,
+            0xFF05 => self.TIMA,
+            0xFF06 => self.TMA,
+            0xFF07 => self.TAC,
+            0xFF01 ..= 0xFF7F => {
                 self.io[(addr-0xff00) as usize]
             },
             0xFF80 ..= 0xFFFE => {
@@ -215,7 +241,11 @@ impl Memory {
             0xFF0F => self.IF = val,
             0xFF40 ..= 0xFF4B => {
                 self.ppu.write(addr, val)
-            }
+            },
+            0xFF04 => self.DIV = 0,
+            0xFF05 => self.TIMA = val,
+            0xFF06 => self.TMA = val,
+            0xFF07 => self.TAC = val&0x07,
             0xFF00..=0xFF7F => {
                 self.io[(addr-0xff00) as usize] = val
             },
@@ -229,5 +259,26 @@ impl Memory {
 
     pub fn tick(&mut self) {
         self.ppu.tick(&mut self.vram, &mut self.OAM, &mut self.IF);
+
+        
+        self.div_tick += 1;
+        if self.div_tick > 255 {
+            self.DIV = self.DIV.wrapping_add(1);
+            self.div_tick = 0;
+        }
+
+        if self.TAC & 0b00000100 != 0 {
+            self.tima_tick += 1;
+            if self.tima_tick >= tima_speed[self.TAC as usize&0x03] {
+                self.tima_tick = 0;
+                let (tmp, carry) = self.TIMA.overflowing_add(1);
+                if carry {
+                    self.TIMA = self.TMA;
+                    self.IF |= 0b00000100;
+                } else {
+                    self.TIMA = tmp;
+                }
+            }
+        }
     }
 }

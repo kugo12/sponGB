@@ -1,4 +1,4 @@
-use crate::emulator::{Memory, execute};
+use crate::emulator::{Memory, execute, PUSH};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -179,13 +179,55 @@ impl CPU {
         };
     }
 
+    fn handle_interrupts(&mut self) -> bool {
+        let interrupts = self.memory.IF & self.memory.IER;
+        if interrupts & 0b00011111 != 0 {
+            if self.halt && !self.IME { self.halt = false; return false; }
+            PUSH(self, self.PC);
+            if interrupts & 0b00000001 != 0 {  // V-Blank
+                self.memory.IF &= 0b11111110;
+                self.PC = 0x0040;
+                return true;
+            } else if interrupts & 0b00000010 != 0 {  // LCD STAT
+                self.memory.IF &= 0b11111101;
+                self.PC = 0x0048;
+                return true;
+            } else if interrupts & 0b00000100 != 0 {  // Timer
+                self.memory.IF &= 0b11111011;
+                self.PC = 0x0050;
+                return true;
+            } else if interrupts & 0b00001000 != 0 {  // Serial
+                self.memory.IF &= 0b11110111;
+                self.PC = 0x0058;
+                return true;
+            } else if interrupts & 0b00010000 != 0 {  // Joypad
+                self.memory.IF &= 0b11101111;
+                self.PC = 0x0060;
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn tick(&mut self) -> u8 {
-        if self.EI {
-            self.IME = true;
+        if self.IME || self.halt {
+            let i = self.handle_interrupts();
+            if i {
+                self.IME = false;
+                self.halt = false;
+                return 5;
+            }
         }
 
-        let inst = self.load_u8();
-        execute(self, inst)
+        if self.EI {
+            self.IME = true;
+            self.EI = false;
+        }
+
+        if !self.halt {
+            let inst = self.load_u8();
+            execute(self, inst)
+        } else { 1 }
     }
 
     pub fn run(&mut self) {
@@ -198,9 +240,8 @@ impl CPU {
         loop {
             if cycles_left > 0 {
                 cycles_left -= 1;
-            }
-            if cycles_left <= 0 {
-                cycles_left = self.tick()*4;
+            } else {
+                cycles_left = self.tick()*4 - 1;
             }
             self.memory.tick();
         }
