@@ -75,7 +75,7 @@ impl Cartridge {
                 return Err(&"Invalid ROM header checksum")
             }
 
-            if data[0x143] == 0xC0 {
+            if data[0x143] == 0x80 {
                 return  Err(&"Gameboy Color only rom")
             }
 
@@ -89,6 +89,9 @@ impl Cartridge {
                 },
                 0x05 | 0x06 => {
                     self.rom = mbc::MBC2::new(data)?;
+                },
+                0x0F ..= 0x13 => {
+                    self.rom = mbc::MBC3::new(data)?;
                 }
                 _ => panic!("{:x} - unsupported cartridge type", data[0x147])
             };

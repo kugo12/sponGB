@@ -180,12 +180,20 @@ pub enum FetcherMode {
     TILE_PUSH,
 }
 
+#[derive(PartialEq)]
+pub enum FetcherTileMode {
+    BG,
+    WIN
+}
+
 
 pub struct Fetcher {
     lx: u8,
     cycles: u8,
     mode: FetcherMode,
+    tile_mode: FetcherTileMode,
     current_pixel_push: u8,
+    discard_pixels: u8,
     data: [u8; 3]
 }
 
@@ -196,7 +204,9 @@ impl Fetcher {
             lx: 0,
             cycles: 0,
             mode: FetcherMode::TILE_DATA,
+            tile_mode: FetcherTileMode::BG,
             current_pixel_push: 0,
+            discard_pixels: 0,
             data: [0; 3]
         }
     }
@@ -234,7 +244,9 @@ pub struct PPU {
     // oam buffer sprites
     sprites: Vec<Sprite>,
     FIFO: Vec<Pixel_FIFO>,
-    fetcher: Fetcher
+    fetcher: Fetcher,
+    draw_timing: u16,
+    window_line: u8
 }
 
 impl PPU {
@@ -269,7 +281,9 @@ impl PPU {
 
             sprites: vec![],
             FIFO: vec![],
-            fetcher: Fetcher::new()
+            fetcher: Fetcher::new(),
+            draw_timing: 0,
+            window_line: 0
         }
     }
 
@@ -346,8 +360,11 @@ impl PPU {
             },
             DRAW => {
                 let a = self.fetcher_tick(vram, oam);
+                self.draw_timing += 1;
                 if !a {
                     self.mode = HBLANK;
+                    //println!("{}", self.draw_timing);
+                    self.draw_timing = 0;
                     if self.stat&0x08 != 0 { *IF |= 0b10; }
                     self.stat = self.stat&0b11111100;
                 }
@@ -397,6 +414,7 @@ impl PPU {
                     if self.ly == 154 {
                         self.mode = OAM;
                         self.ly = 0;
+                        self.window_line = 0;
                         self.d.new_frame(vram);
                     }
                 } else {
@@ -408,15 +426,34 @@ impl PPU {
 
     pub fn fetcher_tick(&mut self, vram: &[u8], oam: &[u8]) -> bool {
         use FetcherMode::*;
+        use FetcherTileMode::*;
+        if self.fetcher.tile_mode == BG && self.window_enabled && self.ly >= self.wy && self.fetcher.current_pixel_push == self.wx-7 {
+            self.FIFO = vec![];
+            self.fetcher.tile_mode = WIN;
+            self.fetcher.cycles = 0;
+            self.fetcher.lx = 0;
+            self.fetcher.mode = TILE_DATA;
+        }
 
-        if self.fetcher.lx != 160 {
+        if self.fetcher.discard_pixels > 1 {
+            self.FIFO.remove(0);
+            self.fetcher.discard_pixels -= 1;
+        } else {
             match self.fetcher.mode {
                 TILE_DATA => {
                     if self.fetcher.cycles == 1 {
-                        let mut pos = ((self.ly.wrapping_add(self.scy) as u16)/8) * 32 + (self.fetcher.lx.wrapping_add(self.scx)/8) as u16;
-                        pos = match self.bg_tilemap {
-                            false => 0x1800 + pos,
-                            true => 0x1C00 + pos,
+                        let pos = if self.fetcher.tile_mode == BG {
+                            let pos = ((self.ly.wrapping_add(self.scy) as u16)/8) * 32 + (self.fetcher.lx.wrapping_add(self.scx)/8) as u16;
+                            match self.bg_tilemap {
+                                false => 0x1800 + pos,
+                                true => 0x1C00 + pos,
+                            }
+                        } else {
+                            let pos = (self.window_line as u16 / 8) * 32 + (self.fetcher.lx/8) as u16;
+                            match self.window_tilemap {
+                                false => 0x1800 + pos,
+                                true => 0x1C00 + pos,
+                            }
                         };
                         self.fetcher.data[0] = vram[pos as usize];
                     
@@ -426,11 +463,19 @@ impl PPU {
                 },
                 TILE_LOW => {
                     if self.fetcher.cycles == 3 {
-                        let pos = match self.bg_window_tiledata {
-                            true => self.fetcher.data[0] as u16 * 16 + ((self.ly as u16 + self.scy as u16) % 8) * 2,
-                            false => ((0x1000 as i16) + (self.fetcher.data[0] as i8 as i16 * 16)) as u16 + ((self.ly as u16 + self.scy as u16) % 8) * 2,
+                        let pos = if self.fetcher.tile_mode == BG {
+                            match self.bg_window_tiledata {
+                                true => self.fetcher.data[0] as u16 * 16 + ((self.ly + self.scy) as u16 % 8) * 2,
+                                false => ((0x1000 as i16) + (self.fetcher.data[0] as i8 as i16 * 16)) as u16 + ((self.ly as u16 + self.scy as u16) % 8) * 2,
+                            }
+                        } else {
+                            match self.bg_window_tiledata {
+                                true => self.fetcher.data[0] as u16 * 16 + (self.window_line as u16 % 8) * 2,
+                                false => ((0x1000 as i16) + (self.fetcher.data[0] as i8 as i16 * 16)) as u16 + (self.window_line as u16 % 8) * 2,
+                            }
                         };
                         self.fetcher.data[1] = vram[pos as usize];
+                        self.fetcher.data[2] = vram[(pos+1) as usize];
                     
                         self.fetcher.mode = TILE_HIGH;
                     }
@@ -438,13 +483,12 @@ impl PPU {
                 },
                 TILE_HIGH => {
                     if self.fetcher.cycles == 5 {
-                        let pos = match self.bg_window_tiledata {
-                            true => self.fetcher.data[0] as u16 * 16 + ((self.ly as u16 + self.scy as u16) % 8) * 2,
-                            false => ((0x1000 as i16) + (self.fetcher.data[0] as i8 as i16 * 16)) as u16 + ((self.ly as u16 + self.scy as u16) % 8) * 2,
-                        };
-                        self.fetcher.data[2] = vram[(pos+1) as usize];
-                    
                         self.fetcher.mode = TILE_PUSH;
+                        if self.cycles == 85 && self.fetcher.tile_mode != WIN {  // discard first background tile
+                            self.fetcher.mode = TILE_DATA;
+                            self.fetcher.cycles = 0;
+                            return true;
+                        }
                     }
                     self.fetcher.cycles += 1;
                 }
@@ -461,31 +505,42 @@ impl PPU {
                         }
 
                         self.fetcher.cycles += 1;
-                    } else { self.fetcher.mode = TILE_DATA; self.fetcher.cycles = 0; self.fetcher.lx += 8; self.fetcher.data = [0; 3]; }
+                    } else { self.fetcher.mode = TILE_DATA; self.fetcher.cycles = 0; self.fetcher.lx += 8; }
                 }
             }
-        }
-        if self.FIFO.len() > 0 {
-            let pixel = self.FIFO.remove(0);
-            let color = {
-                let c = match pixel.palette {
-                    Pixel_palette::BG => {
-                        map_to_palette(pixel.color, self.bgp)
-                    },
-                    Pixel_palette::OBP1 => {
-                        map_to_palette(pixel.color, self.obp0)
-                    },
-                    Pixel_palette::OBP2 => {
-                        map_to_palette(pixel.color, self.obp1)
-                    }
-                };
-                map_color(c)
-            };
 
-            self.d.draw_pixel(self.fetcher.current_pixel_push, self.ly, color);
-            self.fetcher.current_pixel_push += 1;
-        } else if self.fetcher.lx >= 159 {
-            return false;
+            if self.FIFO.len() > 0 {
+                if self.fetcher.discard_pixels == 0 && self.scx%8 != 0 {
+                    self.fetcher.discard_pixels = self.scx%8 + 1;
+                    return true;
+                }
+                let pixel = self.FIFO.remove(0);
+                let color = {
+                    let c = match pixel.palette {
+                        Pixel_palette::BG => {
+                            map_to_palette(pixel.color, self.bgp)
+                        },
+                        Pixel_palette::OBP1 => {
+                            map_to_palette(pixel.color, self.obp0)
+                        },
+                        Pixel_palette::OBP2 => {
+                            map_to_palette(pixel.color, self.obp1)
+                        }
+                    };
+                    map_color(c)
+                };
+
+                self.d.draw_pixel(self.fetcher.current_pixel_push, self.ly, color);
+                self.fetcher.current_pixel_push += 1;
+            }
+
+            if self.fetcher.current_pixel_push == 160 {
+                self.FIFO = vec![];
+                if self.fetcher.tile_mode == WIN {
+                    self.window_line += 1;
+                }
+                return false;
+            }
         }
         true
     }
