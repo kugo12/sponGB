@@ -427,7 +427,7 @@ impl PPU {
     pub fn fetcher_tick(&mut self, vram: &[u8], oam: &[u8]) -> bool {
         use FetcherMode::*;
         use FetcherTileMode::*;
-        if self.fetcher.tile_mode == BG && self.window_enabled && self.ly >= self.wy && self.fetcher.current_pixel_push == self.wx-7 {
+        if self.fetcher.tile_mode == BG && self.window_enabled && self.ly >= self.wy && self.fetcher.current_pixel_push+7 == self.wx {
             self.FIFO = vec![];
             self.fetcher.tile_mode = WIN;
             self.fetcher.cycles = 0;
@@ -465,8 +465,8 @@ impl PPU {
                     if self.fetcher.cycles == 3 {
                         let pos = if self.fetcher.tile_mode == BG {
                             match self.bg_window_tiledata {
-                                true => self.fetcher.data[0] as u16 * 16 + ((self.ly + self.scy) as u16 % 8) * 2,
-                                false => ((0x1000 as i16) + (self.fetcher.data[0] as i8 as i16 * 16)) as u16 + ((self.ly as u16 + self.scy as u16) % 8) * 2,
+                                true => self.fetcher.data[0] as u16 * 16 + (self.ly.wrapping_add(self.scy) as u16 % 8) * 2,
+                                false => ((0x1000 as i16) + (self.fetcher.data[0] as i8 as i16 * 16)) as u16 + (self.ly.wrapping_add(self.scy) as u16 % 8) * 2,
                             }
                         } else {
                             match self.bg_window_tiledata {

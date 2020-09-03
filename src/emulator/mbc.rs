@@ -93,6 +93,7 @@ impl MBC1 {
 
     fn gen_bitmask(val: u8) -> u8 {
         match rom_banks(val) {
+            2 =>   0b00000001,
             4 =>   0b00000011,
             8 =>   0b00000111,
             16 =>  0b00001111,
@@ -120,7 +121,7 @@ impl MBC1 {
             rom: data,
             ram: vec![0; ram_s],
             ram_enabled: false,
-            bank: 0,
+            bank: 1,
             banking_mode: false,
             bitmask: bitmask,
             battery: bat
@@ -176,7 +177,7 @@ impl MemoryBankController for MBC1 {
     }
 
     fn write_ram(&mut self, addr: u16, val: u8) {
-        if self.ram_enabled {
+        if self.ram_enabled && self.ram.len() > 0 {
             let bank = if self.banking_mode {
                 (self.bank&0x60).rotate_left(3) as usize
             } else { 0 };
@@ -271,6 +272,7 @@ impl MBC3 {
 
     fn gen_bitmask(val: u8) -> u8 {
         match rom_banks(val) {
+            2 =>   0b00000001,
             4 =>   0b00000011,
             8 =>   0b00000111,
             16 =>  0b00001111,
@@ -298,7 +300,7 @@ impl MBC3 {
             rom: data,
             ram: vec![0; ram_s],
             ram_enabled: false,
-            bank: 0,
+            bank: 1,
             banking_mode: false,
             bitmask: bitmask,
             battery: bat
@@ -354,7 +356,7 @@ impl MemoryBankController for MBC3 {
     }
 
     fn write_ram(&mut self, addr: u16, val: u8) {
-        if self.ram_enabled {
+        if self.ram_enabled && self.ram.len() > 0 {
             let bank = if self.banking_mode {
                 (self.bank&0x60).rotate_left(3) as usize
             } else { 0 };
