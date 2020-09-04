@@ -141,7 +141,7 @@ pub struct Memory {
     TMA: u8,  // FF06
     TAC: u8,  // FF07
 
-    input: u8
+    input_select: u8
 }
 
 impl Memory {
@@ -164,7 +164,7 @@ impl Memory {
             TMA: 0,
             TAC: 0,
 
-            input: 0x0F
+            input_select: 0
         }
     }
 
@@ -195,7 +195,15 @@ impl Memory {
             0xFF40 ..= 0xFF4B => {
                 self.ppu.read(addr)
             },
-            0xFF00 => self.input,
+            0xFF00 => {
+                match self.input_select&0x30 {
+                    0x00 => 0xF,
+                    0x10 => self.ppu.in_button | self.input_select,
+                    0x20 => self.ppu.in_direction | self.input_select,
+                    0x30 => 0xF,
+                    _ => panic!()
+                }
+            },
             0xFF04 => self.DIV,
             0xFF05 => self.TIMA,
             0xFF06 => self.TMA,
@@ -241,6 +249,9 @@ impl Memory {
             0xFE00 ..= 0xFE9F => {
                 self.OAM[(addr-0xfe00) as usize] = val
             },
+            0xFF00 => {
+                self.input_select = val&0x30
+            },
             0xFF46 => {  // TODO: real timings, not instant
                 let mut pos = (val as u16) << 8;
                 loop {
@@ -257,7 +268,7 @@ impl Memory {
             0xFF05 => self.TIMA = val,
             0xFF06 => self.TMA = val,
             0xFF07 => self.TAC = val&0x07,
-            0xFF00..=0xFF7F => {
+            0xFF01..=0xFF7F => {
                 self.io[(addr-0xff00) as usize] = val
             },
             0xFF80..=0xFFFE => {
@@ -269,7 +280,7 @@ impl Memory {
     }
 
     pub fn tick(&mut self) {
-        self.ppu.tick(&mut self.vram, &mut self.OAM, &mut self.IF);
+        self.ppu.tick(&mut self.vram, &mut self.OAM, &mut self.IF, &self.input_select);
 
         
         self.div_tick += 1;

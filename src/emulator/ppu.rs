@@ -110,7 +110,7 @@ impl Draw {
             .size(160*2, (144+192+1)*2)
             .title("Gameboy emulator")
             .build();
-        // handle.set_target_fps(60);
+        //handle.set_target_fps(60);
 
         let mut img = Image::gen_image_color(160, 144, Color::BLACK);
         img.set_format(raylib::ffi::PixelFormat::UNCOMPRESSED_R8G8B8);
@@ -255,7 +255,11 @@ pub struct PPU {
     FIFO_sprite: Vec<Pixel_FIFO>,
     fetcher: Fetcher,
     draw_timing: u16,
-    window_line: u8
+    window_line: u8,
+
+    // input per frame - 0 is pressed
+    pub in_button: u8,     // p15 5th bit
+    pub in_direction: u8,  // p14 4th bit
 }
 
 impl PPU {
@@ -293,7 +297,41 @@ impl PPU {
             FIFO_sprite: vec![],
             fetcher: Fetcher::new(),
             draw_timing: 0,
-            window_line: 0
+            window_line: 0,
+
+            in_button: 0xF,
+            in_direction: 0xF
+        }
+    }
+
+    fn update_input(&mut self, IF: &mut u8, input_select: &u8) {
+        use raylib::consts::KeyboardKey::{KEY_W, KEY_S, KEY_A, KEY_D, KEY_J, KEY_K, KEY_N, KEY_M};
+
+        let hl = &self.d.handle;
+        let before_dir = self.in_direction;
+        let before_butt = self.in_button;
+
+        self.in_direction = hl.is_key_up(KEY_D) as u8 | ((hl.is_key_up(KEY_A) as u8) << 1) | ((hl.is_key_up(KEY_W) as u8) << 2) | ((hl.is_key_up(KEY_S) as u8) << 3);
+        self.in_button = hl.is_key_up(KEY_J) as u8 | ((hl.is_key_up(KEY_K) as u8) << 1) | ((hl.is_key_up(KEY_N) as u8) << 2) | ((hl.is_key_up(KEY_M) as u8) << 3);
+    
+        
+        match input_select&0x30 {
+            0x10 => {
+                if before_butt & (!self.in_button) != 0 {
+                    *IF |= 0x10;
+                }
+            },
+            0x20 => {
+                if before_dir & (!self.in_direction) != 0 {
+                    *IF |= 0x10;
+                }
+            },
+            0x30 => {
+                if before_dir & (!self.in_direction) != 0 || before_butt & (!self.in_button) != 0 {
+                    *IF |= 0x10;
+                }
+            },
+            _ => ()
         }
     }
 
@@ -346,7 +384,7 @@ impl PPU {
         }
     }
 
-    pub fn tick(&mut self, vram: &mut [u8], oam: &mut [u8], IF: &mut u8) {
+    pub fn tick(&mut self, vram: &mut [u8], oam: &mut [u8], IF: &mut u8, input_select: &u8) {
         use PPU_MODE::*;
 
         if self.d.handle.window_should_close() { panic!("Window closed"); }
@@ -369,7 +407,7 @@ impl PPU {
                 self.cycles += 1;
             },
             DRAW => {
-                let a = self.fetcher_tick(vram, oam);
+                let a = self.fetcher_tick(vram);
                 self.draw_timing += 1;
                 if !a {
                     self.mode = HBLANK;
@@ -426,6 +464,7 @@ impl PPU {
                         self.ly = 0;
                         self.window_line = 0;
                         self.d.new_frame(vram);
+                        self.update_input(IF, input_select);
                     }
                 } else {
                     self.cycles += 1;
@@ -434,7 +473,7 @@ impl PPU {
         }
     }
 
-    pub fn fetcher_tick(&mut self, vram: &[u8], oam: &[u8]) -> bool {
+    pub fn fetcher_tick(&mut self, vram: &[u8]) -> bool {
         use FetcherMode::*;
         use FetcherTileMode::*;
 

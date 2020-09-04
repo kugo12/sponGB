@@ -138,7 +138,13 @@ impl MemoryBankController for MBC1 {
             0x4000 ..= 0x7FFF => {
                 let bank = if self.banking_mode {
                     self.bank as usize & 0b00011111
-                } else { self.bank as usize };
+                } else { 
+                    match rom_banks(self.rom[0x148]) {
+                        64 => self.bank as usize & 0b00111111,
+                        128 => self.bank as usize & 0b01111111,
+                        _ => self.bank as usize
+                    }
+                };
                 
                 self.rom[addr as usize + 0x4000*(bank-1)]
             },
@@ -161,7 +167,9 @@ impl MemoryBankController for MBC1 {
                 self.bank = val&0xE0 | self.bank&0x1F;
             },
             0x6000 ..= 0x7FFF => {
-                self.banking_mode = val&0x1 == 1;
+                if rom_banks(self.rom[0x148]) >= 64 {
+                    self.banking_mode = val&0x1 == 1;
+                }
             },
             _ => panic!()
         }
@@ -261,7 +269,7 @@ pub struct MBC3 {
     ram: Vec<u8>,
     ram_enabled: bool,
     bank: u8,
-    banking_mode: bool,  // false -> rom, true -> ram
+    ram_bank: u8,
     bitmask: u8,
     rtc: bool,
     battery: bool,
@@ -278,17 +286,17 @@ impl MBC3 {
             8 =>   0b00000111,
             16 =>  0b00001111,
             32 =>  0b00011111,
-            64 =>  0b00011111,
-            128 => 0b00011111,
+            64 =>  0b00111111,
+            128 => 0b01111111,
             v => panic!("Unexpected MBC3 rom bank value {} from {}", v, val)
         }
     }
 
-    pub fn new(data: Vec<u8>) -> Result<Box<MBC1>, &'static str> {
+    pub fn new(data: Vec<u8>) -> Result<Box<MBC3>, &'static str> {
         let ram_s = ram_size(data[0x149])?;
         let rom_s = rom_size(data[0x148])?;
         let bat = data[0x147] == 0x03;
-        let bitmask = MBC1::gen_bitmask(data[0x148]);
+        let bitmask = MBC3::gen_bitmask(data[0x148]);
 
         if ram_s > MBC1::MAX_RAM_SIZE {
             return Err(&"header ram size too big for MBC1")
@@ -297,14 +305,15 @@ impl MBC3 {
             return Err(&"header rom size != rom size")
         }
 
-        Ok(Box::new(MBC1 {
+        Ok(Box::new(MBC3 {
             rom: data,
             ram: vec![0; ram_s],
             ram_enabled: false,
             bank: 1,
-            banking_mode: false,
+            ram_bank: 0,
             bitmask: bitmask,
-            battery: bat
+            battery: bat,
+            rtc: false
         }))
     }
 }
@@ -316,11 +325,7 @@ impl MemoryBankController for MBC3 {
                 self.rom[addr as usize]
             },
             0x4000 ..= 0x7FFF => {
-                let bank = if self.banking_mode {
-                    self.bank as usize & 0b00011111
-                } else { self.bank as usize };
-                
-                self.rom[addr as usize + 0x4000*(bank-1)]
+                self.rom[addr as usize + 0x4000*(self.bank as usize-1)]
             },
             _ => panic!()
         }
@@ -332,15 +337,15 @@ impl MemoryBankController for MBC3 {
                 self.ram_enabled = val == 0x0A;
             },
             0x2000 ..= 0x3FFF => {
-                if val&0x1F == 0 { val = 1 }
-                self.bank = self.bank&0xE0 | val&self.bitmask;
+                val &= self.bitmask;
+                if val == 0 { val = 1 }
+                self.bank = val;
             },
             0x4000 ..= 0x5FFF => {
-                val = val.rotate_right(3);
-                self.bank = val&0x60 | self.bank&0x1F;
+                self.ram_bank = val&0b11;
             },
             0x6000 ..= 0x7FFF => {
-                self.banking_mode = val&0x1 == 1;
+                
             },
             _ => panic!()
         }
@@ -348,21 +353,13 @@ impl MemoryBankController for MBC3 {
 
     fn read_ram(&mut self, addr: u16) -> u8 {
         if self.ram_enabled {
-            let bank = if self.banking_mode {
-                (self.bank&0x60).rotate_left(3) as usize
-            } else { 0 };
-
-            self.ram[addr as usize + bank*0x2000]
+            self.ram[addr as usize + self.ram_bank as usize*0x2000]
         } else { 0xFF }
     }
 
     fn write_ram(&mut self, addr: u16, val: u8) {
         if self.ram_enabled && self.ram.len() > 0 {
-            let bank = if self.banking_mode {
-                (self.bank&0x60).rotate_left(3) as usize
-            } else { 0 };
-
-            self.ram[addr as usize + bank*0x2000] = val;
+            self.ram[addr as usize + self.ram_bank as usize*0x2000] = val;
         }
     }
 }
