@@ -8,6 +8,7 @@ pub enum PPU_MODE {
     VBLANK
 }
 
+#[derive(Copy, Clone)]
 pub enum Pixel_palette {  // can be used to differentiate between bg/window and sprite too
     BG,  // bg and window actually
     OBP1,
@@ -16,9 +17,11 @@ pub enum Pixel_palette {  // can be used to differentiate between bg/window and 
 
 pub struct Pixel_FIFO {
     palette: Pixel_palette,
-    color: u8
+    color: u8,
+    priority: Option<bool>
 }
 
+#[derive(Copy, Clone)]
 struct Sprite {
     x: u8,
     y: u8,
@@ -26,14 +29,14 @@ struct Sprite {
     x_flip: bool,
     y_flip: bool,
     priority: bool,
-    palette: bool
+    palette: bool  // false - obp1, true = obp2
 }
 
 impl Sprite {
     pub fn new(data: &[u8]) -> Sprite {
         Sprite {
-            x: data[0],
-            y: data[1],
+            x: data[1],
+            y: data[0],
             tile_location: data[2],
             x_flip: data[3]&0x20 != 0,
             y_flip: data[3]&0x40 != 0,
@@ -142,6 +145,7 @@ impl Draw {
         d.clear_background(Color::WHITE);
         d.draw_texture_pro(&self.txt, self.frame_src_rect, self.frame_dest_rect, Vector2::new(0., 0.), 0., Color::WHITE);
         d.draw_texture_pro(&self.tiles, self.tiles_src_rect, self.tiles_dest_rect, Vector2::new(0., 0.), 0., Color::WHITE);
+        // d.draw_fps(0, 0);
     }
 
     fn draw_vram_tiles(&mut self, vram: &[u8]) {
@@ -194,6 +198,8 @@ pub struct Fetcher {
     tile_mode: FetcherTileMode,
     current_pixel_push: u8,
     discard_pixels: u8,
+    current_sprite: Option<Sprite>,
+    sprite_cycles: u8,
     data: [u8; 3]
 }
 
@@ -207,7 +213,9 @@ impl Fetcher {
             tile_mode: FetcherTileMode::BG,
             current_pixel_push: 0,
             discard_pixels: 0,
-            data: [0; 3]
+            data: [0; 3],
+            current_sprite: None,
+            sprite_cycles: 0,
         }
     }
 }
@@ -244,6 +252,7 @@ pub struct PPU {
     // oam buffer sprites
     sprites: Vec<Sprite>,
     FIFO: Vec<Pixel_FIFO>,
+    FIFO_sprite: Vec<Pixel_FIFO>,
     fetcher: Fetcher,
     draw_timing: u16,
     window_line: u8
@@ -281,6 +290,7 @@ impl PPU {
 
             sprites: vec![],
             FIFO: vec![],
+            FIFO_sprite: vec![],
             fetcher: Fetcher::new(),
             draw_timing: 0,
             window_line: 0
@@ -351,7 +361,7 @@ impl PPU {
                 
                 if self.cycles % 2 == 0 && self.sprites.len() < 10 {
                     let oam_pos = self.cycles as usize * 2;
-                    if Sprite::is_in_scanline(oam[oam_pos], oam[oam_pos+1], self.ly, self.sprite_size) {
+                    if Sprite::is_in_scanline(oam[oam_pos+1], oam[oam_pos], self.ly, self.sprite_size) {
                         self.sprites.push(Sprite::new(&oam[oam_pos .. oam_pos+4]));
                     }
                 }
@@ -427,6 +437,64 @@ impl PPU {
     pub fn fetcher_tick(&mut self, vram: &[u8], oam: &[u8]) -> bool {
         use FetcherMode::*;
         use FetcherTileMode::*;
+
+        if let Some(sprite) = self.fetcher.current_sprite {
+            self.fetcher.sprite_cycles += 1;
+            if self.fetcher.sprite_cycles >= 5 {
+                self.fetcher.current_sprite = None;
+                self.fetcher.sprite_cycles = 0;
+            } else if self.fetcher.sprite_cycles == 4 {
+                let (low, high) = {
+                    let data_pos = if self.fetcher.current_sprite.unwrap().y_flip {
+                        if self.sprite_size {
+                            (sprite.tile_location & 0xFE) as u16 * 16 + 30 - (((self.ly as u16 + 16) - sprite.y as u16)%16) * 2
+                        } else {
+                            sprite.tile_location as u16 * 16 + 14 - (((self.ly as u16 + 16) - sprite.y as u16)%8) * 2
+                        }
+                    } else {
+                        if self.sprite_size {
+                            (sprite.tile_location & 0xFE) as u16 * 16 + (((self.ly as u16 + 16) - sprite.y as u16)%16) * 2
+                        } else {
+                            sprite.tile_location as u16 * 16 + (((self.ly as u16 + 16) - sprite.y as u16)%8) * 2
+                        }
+                    };
+
+                    (vram[data_pos as usize], vram[data_pos as usize + 1])
+                };
+
+                let mut _px = compose_two_bytes(low, high);
+                if self.fetcher.current_sprite.unwrap().x_flip { _px.reverse(); }
+
+                let px = if sprite.x < 8 {
+                    &_px[8-sprite.x as usize..8]
+                } else { &_px[..] };
+                let palette = if sprite.palette { Pixel_palette::OBP2 } else { Pixel_palette::OBP1 };
+
+                for (i, val) in px.iter().enumerate() {
+                    if i + 1 > self.FIFO_sprite.len() { // push to vec
+                        self.FIFO_sprite.push({
+                            Pixel_FIFO {
+                                palette: palette,
+                                color: *val,
+                                priority: Some(sprite.priority)
+                            }
+                        })
+                    } else { // compose
+                        let other_px = &self.FIFO_sprite[i];
+                        if other_px.color == 0 {
+                            self.FIFO_sprite[i] = Pixel_FIFO {
+                                palette: palette,
+                                color: *val,
+                                priority: Some(sprite.priority)
+                            }
+                        }
+                    }
+                }
+            }
+
+            return true;
+        }
+
         if self.fetcher.tile_mode == BG && self.window_enabled && self.ly >= self.wy && self.fetcher.current_pixel_push+7 == self.wx {
             self.FIFO = vec![];
             self.fetcher.tile_mode = WIN;
@@ -495,11 +563,13 @@ impl PPU {
                 TILE_PUSH => {
                     if self.fetcher.cycles == 6 {
                         let pixels = compose_two_bytes(self.fetcher.data[1], self.fetcher.data[2]);
+
                         for pixel in pixels.iter() {
                             self.FIFO.push(
                                 Pixel_FIFO {
                                     palette: Pixel_palette::BG,
-                                    color: *pixel
+                                    color: *pixel,
+                                    priority: None
                                 }
                             );
                         }
@@ -514,21 +584,40 @@ impl PPU {
                     self.fetcher.discard_pixels = self.scx%8 + 1;
                     return true;
                 }
-                let pixel = self.FIFO.remove(0);
-                let color = {
-                    let c = match pixel.palette {
-                        Pixel_palette::BG => {
-                            map_to_palette(pixel.color, self.bgp)
-                        },
-                        Pixel_palette::OBP1 => {
-                            map_to_palette(pixel.color, self.obp0)
-                        },
-                        Pixel_palette::OBP2 => {
-                            map_to_palette(pixel.color, self.obp1)
+
+                if self.sprites.len() > 0 {
+                    for (i, sprite) in self.sprites.iter().enumerate() {
+                        if self.fetcher.current_pixel_push + 8 >= sprite.x {
+                            if self.sprite_enabled {
+                                self.fetcher.current_sprite = Some(*sprite);
+                                self.sprites.remove(i);
+                                return true;
+                            }
                         }
-                    };
-                    map_color(c)
-                };
+                    }
+                }
+
+                let pixel = self.FIFO.remove(0);
+                let mut color = map_color(map_to_palette(pixel.color, self.bgp));
+                if !self.bg_enabled && self.fetcher.tile_mode == BG {
+                    color = Color::WHITE;
+                }
+
+                if self.FIFO_sprite.len() > 0 {
+                    let sprite_pixel = self.FIFO_sprite.remove(0);
+                    if sprite_pixel.color != 0 {
+                        if sprite_pixel.priority == Some(false) || color == Color::WHITE {
+                            color = {
+                                let c = match sprite_pixel.palette {
+                                    Pixel_palette::OBP1 => map_to_palette(sprite_pixel.color, self.obp0),
+                                    Pixel_palette::OBP2 => map_to_palette(sprite_pixel.color, self.obp1),
+                                    _ => panic!("Sprite pixels shouldn't have background pixel palette")
+                                };
+                                map_color(c)
+                            }
+                        }
+                    }
+                }
 
                 self.d.draw_pixel(self.fetcher.current_pixel_push, self.ly, color);
                 self.fetcher.current_pixel_push += 1;
@@ -536,6 +625,7 @@ impl PPU {
 
             if self.fetcher.current_pixel_push == 160 {
                 self.FIFO = vec![];
+                self.FIFO_sprite = vec![];
                 if self.fetcher.tile_mode == WIN {
                     self.window_line += 1;
                 }

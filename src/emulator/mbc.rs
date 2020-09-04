@@ -152,12 +152,13 @@ impl MemoryBankController for MBC1 {
                 self.ram_enabled = val == 0x0A;
             },
             0x2000 ..= 0x3FFF => {
-                if val&0x1F == 0 { val = 1 }
-                self.bank = self.bank&0xE0 | val&self.bitmask;
+                val &= self.bitmask;
+                if val == 0 { val = 1 }
+                self.bank = (self.bank&0xE0) | val;
             },
             0x4000 ..= 0x5FFF => {
                 val = val.rotate_right(3);
-                self.bank = val&0x60 | self.bank&0x1F;
+                self.bank = val&0xE0 | self.bank&0x1F;
             },
             0x6000 ..= 0x7FFF => {
                 self.banking_mode = val&0x1 == 1;
