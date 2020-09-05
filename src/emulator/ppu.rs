@@ -256,6 +256,7 @@ pub struct PPU {
     fetcher: Fetcher,
     draw_timing: u16,
     window_line: u8,
+    window_y_trigger: bool,
 
     // input per frame - 0 is pressed
     pub in_button: u8,     // p15 5th bit
@@ -298,6 +299,7 @@ impl PPU {
             fetcher: Fetcher::new(),
             draw_timing: 0,
             window_line: 0,
+            window_y_trigger: false,
 
             in_button: 0xF,
             in_direction: 0xF
@@ -460,6 +462,7 @@ impl PPU {
                         self.stat &= !0b100;
                     }
                     if self.ly == 154 {
+                        self.window_y_trigger = false;
                         self.mode = OAM;
                         self.ly = 0;
                         self.window_line = 0;
@@ -534,7 +537,8 @@ impl PPU {
             return true;
         }
 
-        if self.fetcher.tile_mode == BG && self.window_enabled && self.ly >= self.wy && self.fetcher.current_pixel_push+7 == self.wx {
+        if self.fetcher.tile_mode == BG && self.window_enabled && self.fetcher.current_pixel_push+7 == self.wx && (self.ly == self.wy || self.window_y_trigger) {
+            self.window_y_trigger = true;
             self.FIFO = vec![];
             self.fetcher.tile_mode = WIN;
             self.fetcher.cycles = 0;
