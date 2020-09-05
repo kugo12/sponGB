@@ -75,7 +75,7 @@ impl Cartridge {
                 return Err(&"Invalid ROM header checksum")
             }
 
-            if data[0x143] == 0x80 {
+            if data[0x143] == 0xC0 {
                 return  Err(&"Gameboy Color only rom")
             }
 
@@ -104,7 +104,7 @@ impl Cartridge {
 
     fn get_title(data: &Vec<u8>) -> String {
         let mut t = String::new();
-        for i in 0x134 ..= 0x143 {
+        for i in 0x134 ..= 0x13E {
             if data[i] == 0 { break; }
             t.push(data[i] as char);
         }
@@ -238,7 +238,7 @@ impl Memory {
                 self.vram[(addr-0x8000) as usize] = val
             },
             0xA000 ..= 0xBFFF => {
-                self.cart.write_ram(addr-0xa000, val)
+                self.cart.write_ram(addr-0xA000, val)
             },
             0xC000 ..= 0xDFFF => {
                 self.ram[(addr-0xc000) as usize] = val

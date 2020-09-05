@@ -85,6 +85,7 @@ pub struct MBC1 {
     banking_mode: bool,  // false -> rom, true -> ram
     bitmask: u8,
     battery: bool,
+    rom_banks: u8
 }
 
 impl MBC1 {
@@ -118,6 +119,7 @@ impl MBC1 {
         }
 
         Ok(Box::new(MBC1 {
+            rom_banks: rom_banks(data[0x148]),
             rom: data,
             ram: vec![0; ram_s],
             ram_enabled: false,
@@ -133,20 +135,26 @@ impl MemoryBankController for MBC1 {
     fn read_rom(&mut self, addr: u16) -> u8 {
         match addr {
             0x0000 ..= 0x3FFF => {
-                self.rom[addr as usize]
+                if self.banking_mode {
+                    let bank = match self.rom_banks {
+                        64 => self.bank as usize & 0x20,
+                        128 => self.bank as usize & 0x60,
+                        _ => 0
+                    };
+
+                    self.rom[addr as usize + bank as usize*0x4000]
+                } else {
+                    self.rom[addr as usize]
+                }
             },
             0x4000 ..= 0x7FFF => {
-                let bank = if self.banking_mode {
-                    self.bank as usize & 0b00011111
-                } else { 
-                    match rom_banks(self.rom[0x148]) {
-                        64 => self.bank as usize & 0b00111111,
-                        128 => self.bank as usize & 0b01111111,
-                        _ => self.bank as usize
-                    }
+                let bank = match self.rom_banks {
+                    64 => self.bank as usize & 0b00111111,
+                    128 => self.bank as usize & 0b01111111,
+                    _ => self.bank as usize & 0b00011111
                 };
                 
-                self.rom[addr as usize + 0x4000*(bank-1)]
+                self.rom[(addr as usize&0x3FFF) + 0x4000*bank]
             },
             _ => panic!()
         }
@@ -155,21 +163,22 @@ impl MemoryBankController for MBC1 {
     fn write_rom(&mut self, addr: u16, mut val: u8){
         match addr {
             0x0000 ..= 0x1FFF => {
-                self.ram_enabled = val == 0x0A;
+                self.ram_enabled = val&0xF == 0xA;
             },
             0x2000 ..= 0x3FFF => {
+                let bef = val&0x1F;
                 val &= self.bitmask;
-                if val == 0 { val = 1 }
-                self.bank = (self.bank&0xE0) | val;
+                if val == 0 {
+                    val = (bef<=val) as u8
+                }
+                self.bank = (self.bank&0x60) | val;
             },
             0x4000 ..= 0x5FFF => {
                 val = val.rotate_right(3);
-                self.bank = val&0xE0 | self.bank&0x1F;
+                self.bank = val&0x60 | self.bank&0x1F;
             },
             0x6000 ..= 0x7FFF => {
-                if rom_banks(self.rom[0x148]) >= 64 {
-                    self.banking_mode = val&0x1 == 1;
-                }
+                self.banking_mode = val&0x1 == 1;
             },
             _ => panic!()
         }
@@ -178,7 +187,12 @@ impl MemoryBankController for MBC1 {
     fn read_ram(&mut self, addr: u16) -> u8 {
         if self.ram_enabled {
             let bank = if self.banking_mode {
-                (self.bank&0x60).rotate_left(3) as usize
+                let b = match self.ram.len() / 0x2000 {
+                    2 => self.bank&0x20,
+                    4 => self.bank&0x60,
+                    _ => 0
+                };
+                b as usize >> 5
             } else { 0 };
 
             self.ram[addr as usize + bank*0x2000]
@@ -188,7 +202,12 @@ impl MemoryBankController for MBC1 {
     fn write_ram(&mut self, addr: u16, val: u8) {
         if self.ram_enabled && self.ram.len() > 0 {
             let bank = if self.banking_mode {
-                (self.bank&0x60).rotate_left(3) as usize
+                let b = match self.ram.len() / 0x2000 {
+                    2 => self.bank&0x20,
+                    4 => self.bank&0x60,
+                    _ => 0
+                };
+                b as usize >> 5
             } else { 0 };
 
             self.ram[addr as usize + bank*0x2000] = val;
