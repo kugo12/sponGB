@@ -220,12 +220,24 @@ pub struct MBC2 {
     rom: Vec<u8>,
     ram: Vec<u8>,
     ram_enabled: bool,
-    bank: usize
+    bank: usize,
+    bitmask: u8
 }
 
 impl MBC2 {
+    fn gen_bitmask(val: u8) -> u8 {
+        match rom_banks(val) {
+            2 =>   0b00000001,
+            4 =>   0b00000011,
+            8 =>   0b00000111,
+            16 =>  0b00001111,
+            v => panic!("Unexpected MBC2 rom bank value {} from {}", v, val)
+        }
+    }
+
     pub fn new(data: Vec<u8>) -> Result<Box<MBC2>, &'static str> {
         let rom_s = rom_size(data[0x148])?;
+        let bitmask = MBC2::gen_bitmask(data[0x148]);
         if rom_s != data.len() {
             return Err(&"header rom size != rom size")
         }
@@ -235,7 +247,8 @@ impl MBC2 {
                 rom: data,
                 ram: vec![0; 512],
                 ram_enabled: false,
-                bank: 0
+                bank: 1,
+                bitmask: bitmask
             }
         ))
     }
@@ -248,35 +261,38 @@ impl MemoryBankController for MBC2 {
                 self.rom[addr as usize]
             },
             0x4000 ..= 0x7FFF => {
-                self.rom[addr as usize + self.bank*0x4000]
+                self.rom[(addr&0x3FFF) as usize + self.bank*0x4000]
             },
             _ => panic!()
         }
     }
 
-    fn write_rom(&mut self, addr: u16, val: u8){
-        match addr {
-            0x0000 ..= 0x1FFF if addr&0x0100 == 0 => {
-                self.ram_enabled = val&0xF == 0xA ;
-            },
-            0x2000 ..= 0x3FFF if addr&0x0100 == 0x0100 => {
-                self.bank = (val&0xF) as usize;
-            },
-            _ => ()
+    fn write_rom(&mut self, addr: u16, mut val: u8){
+        if addr <= 0x3FFF { 
+            if addr&0x0100 == 0 {
+                self.ram_enabled = val&0xF == 0xA;
+            } else {
+                let bef = val&0xF;
+                val &= self.bitmask;
+                if val == 0 {
+                    val = (bef<=val) as u8
+                }
+                self.bank = val as usize;
+            }
         }
     }
 
     fn read_ram(&mut self, addr: u16) -> u8 {
-        match addr {
-            0x0000 ..= 0x01FF => { self.ram[addr as usize] }
-            _ => 1
+        if self.ram_enabled {
+            return self.ram[addr as usize&0x01FF]
         }
+
+        0xFF
     }
 
     fn write_ram(&mut self, addr: u16, val: u8) {
-        match addr {
-            0x0000 ..= 0x01FF => { self.ram[addr as usize] = val&0xF; }
-            _ => ()
+        if self.ram_enabled {
+            self.ram[addr as usize&0x01FF] = val&0xF | 0xF0
         }
     }
 }
