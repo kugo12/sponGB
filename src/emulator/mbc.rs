@@ -298,7 +298,6 @@ impl MemoryBankController for MBC2 {
 }
 
 
-
 pub struct MBC3 {
     rom: Vec<u8>,
     ram: Vec<u8>,
@@ -333,7 +332,7 @@ impl MBC3 {
         let bat = data[0x147] == 0x03;
         let bitmask = MBC3::gen_bitmask(data[0x148]);
 
-        if ram_s > MBC1::MAX_RAM_SIZE {
+        if ram_s > MBC3::MAX_RAM_SIZE {
             return Err(&"header ram size too big for MBC1")
         }
         if rom_s != data.len() {
@@ -360,7 +359,7 @@ impl MemoryBankController for MBC3 {
                 self.rom[addr as usize]
             },
             0x4000 ..= 0x7FFF => {
-                self.rom[addr as usize + 0x4000*(self.bank as usize-1)]
+                self.rom[(addr as usize & 0x3FFF) + 0x4000*self.bank as usize]
             },
             _ => panic!()
         }
@@ -369,15 +368,23 @@ impl MemoryBankController for MBC3 {
     fn write_rom(&mut self, addr: u16, mut val: u8){
         match addr {
             0x0000 ..= 0x1FFF => {
-                self.ram_enabled = val == 0x0A;
+                self.ram_enabled = val&0xF == 0xA;
             },
             0x2000 ..= 0x3FFF => {
+                let bef = val&0x7F;
                 val &= self.bitmask;
-                if val == 0 { val = 1 }
+                if val == 0 {
+                    val = (bef<=val) as u8
+                }
                 self.bank = val;
             },
             0x4000 ..= 0x5FFF => {
-                self.ram_bank = val&0b11;
+                val &= 0xF;
+                if val > 0x7 && val < 0xD && self.rtc {
+                    self.ram_bank = val;
+                } else {
+                    self.ram_bank = val&0b11;
+                }
             },
             0x6000 ..= 0x7FFF => {
                 
@@ -388,13 +395,26 @@ impl MemoryBankController for MBC3 {
 
     fn read_ram(&mut self, addr: u16) -> u8 {
         if self.ram_enabled {
-            self.ram[addr as usize + self.ram_bank as usize*0x2000]
-        } else { 0xFF }
+            if self.ram_bank < 0x4 {
+                return self.ram[addr as usize + self.ram_bank as usize*0x2000]
+            } else {
+                match self.ram_bank {
+                    0x8 => 1,  // seconds 0x00-0x3B 59
+                    0x9 => 1,  // minutes 0x00-0x3B 59
+                    0xA => 1,  // hours   0x00-0x17 23
+                    0xB => 1,  // lower 8 bits of days counter
+                    0xC => 0b01000000, 
+                    a => panic!("MBC3 read_ram wrong rtc register address: {:x}", a)
+                }
+            }
+        } else { 0x0 }
     }
 
     fn write_ram(&mut self, addr: u16, val: u8) {
-        if self.ram_enabled && self.ram.len() > 0 {
-            self.ram[addr as usize + self.ram_bank as usize*0x2000] = val;
+        if self.ram_enabled && self.ram.len() > 0 && self.ram_bank < 0x4 {
+            if self.ram_bank < 0x4 {
+                self.ram[addr as usize + self.ram_bank as usize*0x2000] = val;
+            }
         }
     }
 }

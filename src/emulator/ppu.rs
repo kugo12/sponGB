@@ -110,7 +110,7 @@ impl Draw {
             .size(160*2, (144+192+1)*2)
             .title("Gameboy emulator")
             .build();
-        //handle.set_target_fps(60);
+        handle.set_target_fps(60);
 
         let mut img = Image::gen_image_color(160, 144, Color::BLACK);
         img.set_format(raylib::ffi::PixelFormat::UNCOMPRESSED_R8G8B8);
@@ -145,7 +145,7 @@ impl Draw {
         d.clear_background(Color::WHITE);
         d.draw_texture_pro(&self.txt, self.frame_src_rect, self.frame_dest_rect, Vector2::new(0., 0.), 0., Color::WHITE);
         d.draw_texture_pro(&self.tiles, self.tiles_src_rect, self.tiles_dest_rect, Vector2::new(0., 0.), 0., Color::WHITE);
-        // d.draw_fps(0, 0);
+        d.draw_fps(260, 300);
     }
 
     fn draw_vram_tiles(&mut self, vram: &[u8]) {
@@ -281,7 +281,7 @@ impl PPU {
             bg_enabled: true,
             
             lcdc: 0x91,  // FF40
-            stat: 0,     // FF41
+            stat: 0x80,  // FF41
             scy: 0,      // FF42
             scx: 0,      // FF43
             ly: 0,       // FF44
@@ -342,7 +342,22 @@ impl PPU {
             0xFF40 => {
                 self.lcdc = val;
                 
+                let old_en = self.lcd_enabled;
                 self.lcd_enabled = val&0x80 != 0;
+                if !old_en && self.lcd_enabled {
+                    self.fetcher = Fetcher::new();
+                    self.cycles = 0;
+                    self.mode = PPU_MODE::OAM;
+                    self.FIFO = vec![];
+                    self.FIFO_sprite = vec![];
+                    self.ly = 0;
+                    self.window_enabled = false;
+                    self.window_line = 0;
+                    self.stat = self.stat&0b11111100 | 0b10;
+                } else if old_en && !self.lcd_enabled {
+                    self.d.frame = [0; 144*160*3];
+                }
+                
                 self.window_tilemap = val&0x40 != 0;
                 self.window_enabled =  val&0x20 != 0;
                 self.bg_window_tiledata = val&0x10 != 0;
@@ -352,7 +367,7 @@ impl PPU {
                 self.bg_enabled = val&0x01 != 0;
             },
             0xFF41 => {
-                self.stat = (self.stat&0x07) | (val&0xF8)  // three lower bits are read only
+                self.stat = (self.stat&0x87) | (val&0x78)  // three lower bits are read only
             },
             0xFF42 => self.scy = val,
             0xFF43 => self.scx = val,
@@ -390,6 +405,16 @@ impl PPU {
         use PPU_MODE::*;
 
         if self.d.handle.window_should_close() { panic!("Window closed"); }
+
+        if !self.lcd_enabled {
+            if self.cycles % 65535 == 0 { // that doesnt need to be accurate
+                self.d.new_frame(vram);
+                self.update_input(IF, input_select);
+                self.cycles = 0;
+            }
+            self.cycles += 1;
+            return;
+        }
 
         match self.mode {
             OAM => {
@@ -462,6 +487,11 @@ impl PPU {
                         self.stat &= !0b100;
                     }
                     if self.ly == 154 {
+                        if self.stat&0x40 != 0 {
+                            if 0 == self.lyc {
+                                *IF |= 0b10;
+                            }
+                        }
                         self.window_y_trigger = false;
                         self.mode = OAM;
                         self.ly = 0;
@@ -547,7 +577,9 @@ impl PPU {
         }
 
         if self.fetcher.discard_pixels > 1 {
-            self.FIFO.remove(0);
+            if self.FIFO.len() > 0 {
+                self.FIFO.remove(0);
+            }
             self.fetcher.discard_pixels -= 1;
         } else {
             match self.fetcher.mode {

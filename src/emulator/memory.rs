@@ -134,12 +134,16 @@ pub struct Memory {
     pub IER: u8,  // interrupt enable register 0xFFFF
 
     // timer registers
-    div_tick: u16,
     tima_tick: u16,
-    DIV: u8,  // FF04
+    DIV: u16,  // FF04
     TIMA: u8, // FF05
     TMA: u8,  // FF06
     TAC: u8,  // FF07
+    tima_schedule: i8,
+
+    serial_control: u8,
+    serial_transfer: u8,
+    serial_count_interrupt: u8,
 
     input_select: u8
 }
@@ -154,15 +158,19 @@ impl Memory {
             OAM: [0; 160],
             io: [0; 128],
             hram: [0; 127],
-            IF: 0,
-            IER: 0,
+            IF: 0b11100000,
+            IER: 0b11100000,
 
-            div_tick: 0,
             tima_tick: 0,
             DIV: 0,
             TIMA: 0,
             TMA: 0,
-            TAC: 0,
+            TAC: 0b11111000,
+            tima_schedule: -1,
+
+            serial_control: 0b01111110,
+            serial_transfer: 0xFF,
+            serial_count_interrupt: 0,
 
             input_select: 0
         }
@@ -200,15 +208,17 @@ impl Memory {
                     0x00 => 0xF,
                     0x10 => self.ppu.in_button | self.input_select,
                     0x20 => self.ppu.in_direction | self.input_select,
-                    0x30 => 0xF,
+                    0x30 => 0xFF,
                     _ => panic!()
                 }
             },
-            0xFF04 => self.DIV,
+            0xFF01 => self.serial_transfer,
+            0xFF02 => self.serial_control,
+            0xFF04 => (self.DIV >> 8) as u8,
             0xFF05 => self.TIMA,
             0xFF06 => self.TMA,
             0xFF07 => self.TAC,
-            0xFF01 ..= 0xFF7F => {
+            0xFF03 ..= 0xFF7F => {
                 self.io[(addr-0xff00) as usize]
             },
             0xFF80 ..= 0xFFFE => {
@@ -221,12 +231,6 @@ impl Memory {
 
     pub fn write(&mut self, addr: u16, val: u8) {
         match addr {
-            0xFF02 if val == 0x81 => { // intercept serial 
-                let v = self.read(0xFF01);
-                if v != 0 {
-                    print!("{}", v as char); 
-                }
-            },
             0xFF50 => {
                 self.cart.bootrom = vec![];
                 self.cart.bootrom_enable = false;
@@ -252,6 +256,28 @@ impl Memory {
             0xFF00 => {
                 self.input_select = val&0x30
             },
+            0xFF01 => {
+                self.serial_transfer = val;
+            },
+            0xFF02 => { // intercept serial 
+                let v = self.read(0xFF01);
+                if v != 0 {
+                    print!("{}", v as char); 
+                }
+                self.serial_control = 0b01111110 | val;
+                if val&0x80 != 0 {
+                    self.serial_count_interrupt = 8;
+                }
+            },
+            0xFF04 => {
+                self.DIV = 0;
+                self.TIMA = 0;
+                self.tima_tick = 0;
+            },
+            0xFF05 => self.TIMA = val,
+            0xFF06 => self.TMA = val,
+            0xFF07 => self.TAC = 0b11111000 | val,
+            0xFF0F => self.IF = 0b11100000 | val,
             0xFF46 => {  // TODO: real timings, not instant
                 let mut pos = (val as u16) << 8;
                 loop {
@@ -260,21 +286,16 @@ impl Memory {
                     pos += 1;
                 }
             }
-            0xFF0F => self.IF = val,
             0xFF40 ..= 0xFF4B => {
                 self.ppu.write(addr, val)
             },
-            0xFF04 => self.DIV = 0,
-            0xFF05 => self.TIMA = val,
-            0xFF06 => self.TMA = val,
-            0xFF07 => self.TAC = val&0x07,
             0xFF01..=0xFF7F => {
                 self.io[(addr-0xff00) as usize] = val
             },
             0xFF80..=0xFFFE => {
                 self.hram[(addr-0xff80) as usize] = val
             },
-            0xFFFF => self.IER = val,
+            0xFFFF => self.IER = 0b11100000 | val,
             _ => ()
         }
     }
@@ -282,25 +303,38 @@ impl Memory {
     pub fn tick(&mut self) {
         self.ppu.tick(&mut self.vram, &mut self.OAM, &mut self.IF, &self.input_select);
 
-        
-        self.div_tick += 1;
-        if self.div_tick > 255 {
-            self.DIV = self.DIV.wrapping_add(1);
-            self.div_tick = 0;
-        }
-
-        if self.TAC & 0b00000100 != 0 {
-            self.tima_tick += 1;
-            if self.tima_tick >= tima_speed[self.TAC as usize&0x03] {
-                self.tima_tick = 0;
-                let (tmp, carry) = self.TIMA.overflowing_add(1);
-                if carry {
-                    self.TIMA = self.TMA;
-                    self.IF |= 0b00000100;
-                } else {
-                    self.TIMA = tmp;
-                }
+        self.serial_transfer = (self.serial_transfer >> 1) | 0x80;
+        if self.serial_count_interrupt > 0 {
+            self.serial_count_interrupt -= 1;
+            if self.serial_count_interrupt == 0 {
+                self.IF |= 0x8;
             }
         }
+
+        self.DIV = self.DIV.wrapping_add(1);
+
+        if self.tima_schedule >= 0 {
+            self.tima_schedule -= 1;
+            if self.tima_schedule == -1 {
+
+                self.TIMA = self.TMA;
+                self.IF |= 0b00000100;
+            }
+        }
+
+        if self.tima_tick >= tima_speed[self.TAC as usize&0x03] {
+            self.tima_tick = 0;
+            let (tmp, carry) = self.TIMA.overflowing_add(1);
+            if carry {
+                if self.TAC & 0b00000100 != 0 {
+                    self.tima_schedule = 3;
+                }
+            } else {
+                self.TIMA = tmp;
+            }
+        } else {
+            self.tima_tick += 1;
+        }
+        
     }
 }
