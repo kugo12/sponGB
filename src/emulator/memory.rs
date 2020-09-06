@@ -6,7 +6,7 @@ use std::error::Error;
 use crate::emulator::mbc;
 use crate::emulator::PPU;
 
-const tima_speed: [u16; 4] = [1024, 16, 64, 256];
+const TIMA_SPEED: [u16; 4] = [512, 8, 32, 128];
 
 pub struct Cartridge {
     rom: Box<dyn mbc::MemoryBankController>,
@@ -134,12 +134,12 @@ pub struct Memory {
     pub IER: u8,  // interrupt enable register 0xFFFF
 
     // timer registers
-    tima_tick: u16,
     DIV: u16,  // FF04
     TIMA: u8, // FF05
     TMA: u8,  // FF06
     TAC: u8,  // FF07
     tima_schedule: i8,
+    last_div: u16,
 
     serial_control: u8,
     serial_transfer: u8,
@@ -161,12 +161,12 @@ impl Memory {
             IF: 0b11100000,
             IER: 0b11100000,
 
-            tima_tick: 0,
             DIV: 0,
             TIMA: 0,
             TMA: 0,
             TAC: 0b11111000,
             tima_schedule: -1,
+            last_div: 0,
 
             serial_control: 0b01111110,
             serial_transfer: 0xFF,
@@ -271,10 +271,15 @@ impl Memory {
             },
             0xFF04 => {
                 self.DIV = 0;
-                self.TIMA = 0;
-                self.tima_tick = 0;
+                self.TIMA = self.TMA;
+                self.tima_schedule = -1;
             },
-            0xFF05 => self.TIMA = val,
+            0xFF05 => {
+                if self.tima_schedule != 1 {
+                    self.tima_schedule = -1;
+                    self.TIMA = val
+                }
+            },
             0xFF06 => self.TMA = val,
             0xFF07 => self.TAC = 0b11111000 | val,
             0xFF0F => self.IF = 0b11100000 | val,
@@ -314,27 +319,23 @@ impl Memory {
         self.DIV = self.DIV.wrapping_add(1);
 
         if self.tima_schedule >= 0 {
-            self.tima_schedule -= 1;
-            if self.tima_schedule == -1 {
-
+            if self.tima_schedule <= 2 {
                 self.TIMA = self.TMA;
                 self.IF |= 0b00000100;
+                self.last_div = self.DIV&TIMA_SPEED[self.TAC as usize&0x03];
             }
+            self.tima_schedule -= 1;
         }
 
-        if self.tima_tick >= tima_speed[self.TAC as usize&0x03] {
-            self.tima_tick = 0;
+        let c = if self.TAC&0x4 != 0 { 0xFFFF } else { 0 };
+        let b = (self.DIV&TIMA_SPEED[self.TAC as usize&0x03])&c;
+        if !b & self.last_div != 0 {
             let (tmp, carry) = self.TIMA.overflowing_add(1);
+            self.TIMA = tmp;
             if carry {
-                if self.TAC & 0b00000100 != 0 {
-                    self.tima_schedule = 3;
-                }
-            } else {
-                self.TIMA = tmp;
+                self.tima_schedule = 5;
             }
-        } else {
-            self.tima_tick += 1;
         }
-        
+        self.last_div = self.DIV&TIMA_SPEED[self.TAC as usize&0x03];
     }
 }
