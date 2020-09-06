@@ -145,7 +145,8 @@ pub struct Memory {
     serial_transfer: u8,
     serial_count_interrupt: u8,
 
-    input_select: u8
+    input_select: u8,
+    pub subins: u8
 }
 
 impl Memory {
@@ -172,12 +173,13 @@ impl Memory {
             serial_transfer: 0xFF,
             serial_count_interrupt: 0,
 
-            input_select: 0
+            input_select: 0,
+            subins: 0
         }
     }
 
     pub fn read(&mut self, addr: u16) -> u8 {
-        match addr {
+        let a = match addr {
             0x0000 ..= 0x00FF if self.cart.bootrom_enable => {
                 self.cart.bootrom[addr as usize]
             },
@@ -226,7 +228,13 @@ impl Memory {
             },
             0xFFFF => self.IER,
             _ => 0
+        }; 
+        
+        self.subins += 1;
+        for i in 0..4 {
+            self.tick();
         }
+        a
     }
 
     pub fn write(&mut self, addr: u16, val: u8) {
@@ -302,6 +310,11 @@ impl Memory {
             },
             0xFFFF => self.IER = 0b11100000 | val,
             _ => ()
+        };
+        
+        self.subins += 1;
+        for i in 0..4 {
+            self.tick();
         }
     }
 
