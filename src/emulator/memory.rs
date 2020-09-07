@@ -25,18 +25,22 @@ impl Cartridge {
         }
     }
 
+    #[inline]
     fn read_rom(&mut self, addr: u16) -> u8 {
         self.rom.read_rom(addr)
     }
 
+    #[inline]
     fn write_rom(&mut self, addr: u16, val: u8) {
         self.rom.write_rom(addr, val)
     }
 
+    #[inline]
     fn read_ram(&mut self, addr: u16) -> u8 {
         self.rom.read_ram(addr)
     }
 
+    #[inline]
     fn write_ram(&mut self, addr: u16, val: u8) {
         self.rom.write_ram(addr, val)
     }
@@ -178,6 +182,7 @@ impl Memory {
         }
     }
 
+    #[inline]
     pub fn read(&mut self, addr: u16) -> u8 {
         let a = match addr {
             0x0000 ..= 0x00FF if self.cart.bootrom_enable => {
@@ -237,6 +242,7 @@ impl Memory {
         a
     }
 
+    #[inline]
     pub fn write(&mut self, addr: u16, val: u8) {
         match addr {
             0xFF50 => {

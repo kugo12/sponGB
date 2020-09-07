@@ -110,7 +110,7 @@ impl Draw {
             .size(160*2, (144+192+1)*2)
             .title("Gameboy emulator")
             .build();
-        handle.set_target_fps(60);
+        //handle.set_target_fps(60);
 
         let mut img = Image::gen_image_color(160, 144, Color::BLACK);
         img.set_format(raylib::ffi::PixelFormat::UNCOMPRESSED_R8G8B8);
@@ -136,6 +136,7 @@ impl Draw {
         }
     }
 
+    #[inline]
     pub fn new_frame(&mut self, vram: &[u8]) {
         self.draw_vram_tiles(vram);
         self.tiles.update_texture(self.tile_arr.as_ref());
@@ -148,6 +149,7 @@ impl Draw {
         d.draw_fps(260, 300);
     }
 
+    #[inline]
     fn draw_vram_tiles(&mut self, vram: &[u8]) {
         let mut vram_pos: usize;
         let mut pixel_pos: usize;
@@ -168,6 +170,7 @@ impl Draw {
         }
     }
 
+    #[inline]
     pub fn draw_pixel(&mut self, x: u8, y: u8, color: Color) {
         let pos = (y as usize * 160 + x as usize)*3;
         self.frame[pos] = color.r;
@@ -306,6 +309,7 @@ impl PPU {
         }
     }
 
+    #[inline]
     fn update_input(&mut self, IF: &mut u8, input_select: &u8) {
         use raylib::consts::KeyboardKey::{KEY_W, KEY_S, KEY_A, KEY_D, KEY_J, KEY_K, KEY_N, KEY_M};
 
@@ -337,6 +341,7 @@ impl PPU {
         }
     }
 
+    #[inline]
     pub fn write(&mut self, addr: u16, val: u8) {
         match addr {
             0xFF40 => {
@@ -383,6 +388,7 @@ impl PPU {
         }
     }
 
+    #[inline]
     pub fn read(&mut self, addr: u16) -> u8 {
         match addr {
             0xFF40 => self.lcdc,
@@ -401,6 +407,7 @@ impl PPU {
         }
     }
 
+    #[inline]
     pub fn tick(&mut self, vram: &mut [u8], oam: &mut [u8], IF: &mut u8, input_select: &u8) {
         use PPU_MODE::*;
 
@@ -418,7 +425,15 @@ impl PPU {
 
         match self.mode {
             OAM => {
-                if self.cycles == 79 { self.mode = DRAW; self.stat |= 0b11; }
+                if self.cycles == 79 {
+                    self.mode = DRAW;
+                    self.stat |= 0b11;
+                    
+                    if self.wy == self.ly {
+                        self.window_y_trigger = true;
+                    }
+                }
+
                 if self.cycles == 0 {
                     self.stat = self.stat&0b11111100 | 0b10;
                     if self.stat&0x20 != 0 { *IF |= 0b10; }
@@ -506,6 +521,7 @@ impl PPU {
         }
     }
 
+    #[inline]
     pub fn fetcher_tick(&mut self, vram: &[u8]) -> bool {
         use FetcherMode::*;
         use FetcherTileMode::*;
@@ -567,8 +583,7 @@ impl PPU {
             return true;
         }
 
-        if self.fetcher.tile_mode == BG && self.window_enabled && self.fetcher.current_pixel_push+7 == self.wx && (self.ly == self.wy || self.window_y_trigger) {
-            self.window_y_trigger = true;
+        if self.fetcher.tile_mode == BG && self.window_enabled && self.fetcher.current_pixel_push+7 == self.wx && self.window_y_trigger {
             self.FIFO = vec![];
             self.fetcher.tile_mode = WIN;
             self.fetcher.cycles = 0;

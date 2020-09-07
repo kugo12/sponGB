@@ -243,13 +243,12 @@ impl CPU {
             } else {
                 cycles_left = (self.tick() - self.memory.subins)*4;
                 self.memory.subins = 0;
+                
+                if cycles_left > 0 {
+                    cycles_left -= 1;
+                }
                 if cycles_left == 0 {
                     continue
-                } else {
-                    cycles_left -= 1;
-                    if cycles_left == 0 {
-                        continue
-                    }
                 }
             }
             self.memory.tick();
