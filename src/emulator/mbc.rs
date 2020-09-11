@@ -48,11 +48,11 @@ impl MemoryBankController for dummyMBC {
         if addr as usize + 1 <= self.rom.len() {
             self.rom[addr as usize]
         } else {
-            0
+            0xFF
         }
     }
     fn write_rom(&mut self, addr: u16, val: u8) {}
-    fn read_ram(&mut self, addr: u16) -> u8 { 0 }
+    fn read_ram(&mut self, addr: u16) -> u8 { 0xFF }
     fn write_ram(&mut self, addr: u16, val: u8) {}
 }
 

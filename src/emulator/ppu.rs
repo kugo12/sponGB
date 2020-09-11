@@ -110,7 +110,7 @@ impl Draw {
             .size(160*2, (144+192+1)*2)
             .title("Gameboy emulator")
             .build();
-        //handle.set_target_fps(60);
+        handle.set_target_fps(60);
 
         let mut img = Image::gen_image_color(160, 144, Color::BLACK);
         img.set_format(raylib::ffi::PixelFormat::UNCOMPRESSED_R8G8B8);

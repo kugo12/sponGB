@@ -2,9 +2,9 @@ use std::io::prelude::*;
 use std::fs::File;
 use std::path::Path;
 use std::error::Error;
+use raylib::prelude::*;
 
-use crate::emulator::mbc;
-use crate::emulator::PPU;
+use crate::emulator::{mbc, PPU, APU};
 
 const TIMA_SPEED: [u16; 4] = [512, 8, 32, 128];
 
@@ -129,6 +129,8 @@ impl Cartridge {
 pub struct Memory {
     pub cart: Cartridge,  // ROM -> 0x0000-0x7FFF 32kB, RAM -> 0xA000-0xBFFF 8kB
     pub ppu: PPU,
+    apu: APU,
+
     vram: [u8; 8192],  // 0x8000 - 0x9FFF 8kB
     ram: [u8; 8192], // 0xC000 - 0xDFFF 8kB + echo at 0xE000 - 0xFDFF
     OAM: [u8; 160],  // 0xFE00 - 0xFE9F sprite attribute memory
@@ -150,14 +152,18 @@ pub struct Memory {
     serial_count_interrupt: u8,
 
     input_select: u8,
-    pub subins: u8
 }
 
 impl Memory {
     pub fn new() -> Memory {
+        let ppu = PPU::new();
+        let apu = APU::new(&ppu.d.thread);
+
         Memory {
             cart: Cartridge::new(),
-            ppu: PPU::new(),
+            ppu: ppu,
+            apu: apu,
+
             vram: [0; 8192],
             ram: [0; 8192],
             OAM: [0; 160],
@@ -178,38 +184,23 @@ impl Memory {
             serial_count_interrupt: 0,
 
             input_select: 0,
-            subins: 0
         }
     }
 
     #[inline]
     pub fn read(&mut self, addr: u16) -> u8 {
-        let a = match addr {
+        match addr {
             0x0000 ..= 0x00FF if self.cart.bootrom_enable => {
                 self.cart.bootrom[addr as usize]
             },
-            0x0000 ..= 0x7FFF => {
-                self.cart.read_rom(addr)
-            },
-            0x8000 ..= 0x9FFF => {
-                self.vram[(addr-0x8000) as usize]
-            },
-            0xA000 ..= 0xBFFF => {
-                self.cart.read_ram(addr-0xa000)
-            },
-            0xC000 ..= 0xDFFF => {
-                self.ram[(addr-0xc000) as usize]
-            },
-            0xE000 ..= 0xFDFF => {
-                self.ram[(addr-0xe000) as usize]
-            },
-            0xFE00 ..= 0xFE9F => {
-                self.OAM[(addr-0xfe00) as usize]
-            },
-            0xFF0F => self.IF,
-            0xFF40 ..= 0xFF4B => {
-                self.ppu.read(addr)
-            },
+            0x0000 ..= 0x7FFF => self.cart.read_rom(addr),
+            0x8000 ..= 0x9FFF => self.vram[(addr-0x8000) as usize],
+            0xA000 ..= 0xBFFF => self.cart.read_ram(addr-0xa000),
+            0xC000 ..= 0xDFFF => self.ram[(addr-0xc000) as usize],
+            0xE000 ..= 0xFDFF => self.ram[(addr-0xe000) as usize],
+            0xFE00 ..= 0xFE9F => self.OAM[(addr-0xfe00) as usize],
+
+            // Memory mapped io
             0xFF00 => {
                 match self.input_select&0x30 {
                     0x00 => 0xF,
@@ -225,30 +216,18 @@ impl Memory {
             0xFF05 => self.TIMA,
             0xFF06 => self.TMA,
             0xFF07 => self.TAC,
-            0xFF03 ..= 0xFF7F => {
-                self.io[(addr-0xff00) as usize]
-            },
-            0xFF80 ..= 0xFFFE => {
-                self.hram[(addr-0xff80) as usize]
-            },
+            0xFF0F => self.IF,
+            0xFF10 ..= 0xFF3F => self.apu.read(addr),
+            0xFF40 ..= 0xFF4B => self.ppu.read(addr),
+            0xFF80 ..= 0xFFFE => self.hram[(addr-0xff80) as usize],
             0xFFFF => self.IER,
-            _ => 0
-        }; 
-        
-        self.subins += 1;
-        for i in 0..4 {
-            self.tick();
+            _ => 0xFF
         }
-        a
     }
 
     #[inline]
     pub fn write(&mut self, addr: u16, val: u8) {
         match addr {
-            0xFF50 => {
-                self.cart.bootrom = vec![];
-                self.cart.bootrom_enable = false;
-            },
             0x0000 ..= 0x7FFF => {
                 self.cart.write_rom(addr, val)
             },
@@ -267,6 +246,8 @@ impl Memory {
             0xFE00 ..= 0xFE9F => {
                 self.OAM[(addr-0xfe00) as usize] = val
             },
+
+            // Memory mapped io
             0xFF00 => {
                 self.input_select = val&0x30
             },
@@ -297,6 +278,9 @@ impl Memory {
             0xFF06 => self.TMA = val,
             0xFF07 => self.TAC = 0b11111000 | val,
             0xFF0F => self.IF = 0b11100000 | val,
+            0xFF10 ..= 0xFF3F => {
+                self.apu.write(addr, val)
+            }
             0xFF46 => {  // TODO: real timings, not instant
                 let mut pos = (val as u16) << 8;
                 loop {
@@ -308,24 +292,21 @@ impl Memory {
             0xFF40 ..= 0xFF4B => {
                 self.ppu.write(addr, val)
             },
-            0xFF01..=0xFF7F => {
-                self.io[(addr-0xff00) as usize] = val
+            0xFF50 => {
+                self.cart.bootrom = vec![];
+                self.cart.bootrom_enable = false;
             },
             0xFF80..=0xFFFE => {
                 self.hram[(addr-0xff80) as usize] = val
             },
             0xFFFF => self.IER = 0b11100000 | val,
             _ => ()
-        };
-        
-        self.subins += 1;
-        for i in 0..4 {
-            self.tick();
         }
     }
 
     pub fn tick(&mut self) {
         self.ppu.tick(&mut self.vram, &mut self.OAM, &mut self.IF, &self.input_select);
+        self.apu.tick();
 
         self.serial_transfer = (self.serial_transfer >> 1) | 0x80;
         if self.serial_count_interrupt > 0 {

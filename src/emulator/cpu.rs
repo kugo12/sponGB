@@ -33,7 +33,9 @@ pub struct CPU {
     pub EI: bool,   // pending enable interrupt
 
     pub memory: Memory,
-    pub halt: bool
+    pub halt: bool,
+
+    subins: u8  // subinstruction memory access counter
 }
 
 impl CPU {
@@ -50,7 +52,9 @@ impl CPU {
             EI: false,
 
             memory: Memory::new(),
-            halt: false
+            halt: false,
+
+            subins: 0
         }
     }
 
@@ -119,14 +123,33 @@ impl CPU {
         }
     }
 
+    pub fn read(&mut self, addr: u16) -> u8 {
+        let a = self.memory.read(addr);
+
+        self.subins += 1;
+        for _ in 0..4 {
+            self.memory.tick();
+        }
+        a
+    }
+
+    pub fn write(&mut self, addr: u16, val: u8) {
+        self.memory.write(addr, val);
+
+        self.subins += 1;
+        for _ in 0..4 {
+            self.memory.tick();
+        }
+    }
+
     pub fn load_u8(&mut self) -> u8 {
-        let v = self.memory.read(self.PC);
+        let v = self.read(self.PC);
         self.PC += 1;
         v
     }
 
     pub fn load_u16(&mut self) -> u16 {
-        let v = ((self.memory.read(self.PC+1) as u16) << 8) | self.memory.read(self.PC) as u16;
+        let v = ((self.read(self.PC+1) as u16) << 8) | self.read(self.PC) as u16;
         self.PC += 2;
         v
     }
@@ -147,7 +170,7 @@ impl CPU {
             5 => *self.L(),
             6 => {
                 let addr = *self.HL();
-                self.memory.read(addr)
+                self.read(addr)
             },
             7 => *self.A(),
             _ => panic!()
@@ -172,7 +195,7 @@ impl CPU {
             5 => *self.L() = val,
             6 => {
                 let addr = *self.HL();
-                self.memory.write(addr, val);
+                self.write(addr, val);
             },
             7 => *self.A() = val,
             _ => panic!()
@@ -211,8 +234,7 @@ impl CPU {
 
     pub fn tick(&mut self) -> u8 {
         if self.IME || self.halt {
-            let i = self.handle_interrupts();
-            if i {
+            if self.handle_interrupts() {
                 self.IME = false;
                 self.halt = false;
                 return 5;
@@ -241,8 +263,8 @@ impl CPU {
             if cycles_left > 0 {
                 cycles_left -= 1;
             } else {
-                cycles_left = (self.tick() - self.memory.subins)*4;
-                self.memory.subins = 0;
+                cycles_left = (self.tick() - self.subins)*4;
+                self.subins = 0;
                 
                 if cycles_left > 0 {
                     cycles_left -= 1;

@@ -14,7 +14,7 @@ fn LDRR(cpu: &mut CPU, instr: u8) -> u8 {
         5 => *cpu.L() = val,
         6 => {
             let addr = *cpu.HL();
-            cpu.memory.write(addr, val);
+            cpu.write(addr, val);
         },
         7 => *cpu.A() = val,
         _ => panic!()
@@ -29,15 +29,15 @@ fn LDRR(cpu: &mut CPU, instr: u8) -> u8 {
 
 
 pub fn PUSH(cpu: &mut CPU, val: u16) {
-    cpu.memory.write(cpu.SP - 1, (val >> 8) as u8);
-    cpu.memory.write(cpu.SP - 2, val as u8);
+    cpu.write(cpu.SP - 1, (val >> 8) as u8);
+    cpu.write(cpu.SP - 2, val as u8);
     cpu.SP = cpu.SP.wrapping_sub(2);
 }
 
 
 fn POP(cpu: &mut CPU) -> u16 {
-    let lsb = cpu.memory.read(cpu.SP) as u16;
-    let msb = cpu.memory.read(cpu.SP + 1) as u16;
+    let lsb = cpu.read(cpu.SP) as u16;
+    let msb = cpu.read(cpu.SP + 1) as u16;
     cpu.SP = cpu.SP.wrapping_add(2);
     (msb << 8) | lsb
 }
@@ -232,9 +232,9 @@ fn INC(cpu: &mut CPU, inst: u8) -> u8 {
     let (h, z, cycles) = {
         if inst == 0x34 {
             let addr = *cpu.HL();
-            let val = cpu.memory.read(addr);
+            let val = cpu.read(addr);
             let tmp = val.wrapping_add(1);
-            cpu.memory.write(addr, tmp);
+            cpu.write(addr, tmp);
 
             ((val&0xF)+1 == 0x10, tmp == 0, 3)
         } else {
@@ -266,9 +266,9 @@ fn DEC(cpu: &mut CPU, inst: u8) -> u8 {
     let (h, z, cycles) = {
         if inst == 0x35 {
             let addr = *cpu.HL();
-            let val = cpu.memory.read(addr);
+            let val = cpu.read(addr);
             let tmp = val.wrapping_sub(1);
-            cpu.memory.write(addr, tmp);
+            cpu.write(addr, tmp);
 
             (val&0x0F == 0, tmp == 0, 3)
         } else {
@@ -432,7 +432,7 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         0x36 => {
             let addr = *cpu.HL();
             let val = cpu.load_u8();
-            cpu.memory.write(addr, val);
+            cpu.write(addr, val);
             3
         },
         0x3E => {
@@ -449,49 +449,49 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         0x02 => {
             let addr = *cpu.BC();
             let val = *cpu.A();
-            cpu.memory.write(addr, val);
+            cpu.write(addr, val);
             2
         },
         0x12 => {
             let addr = *cpu.DE();
             let val = *cpu.A();
-            cpu.memory.write(addr, val);
+            cpu.write(addr, val);
             2
         },
         0x22 => {
             let addr = *cpu.HL();
             let val = *cpu.A();
-            cpu.memory.write(addr, val);
+            cpu.write(addr, val);
             *cpu.HL() += 1;
             2
         },
         0x32 => {
             let addr = *cpu.HL();
             let val = *cpu.A();
-            cpu.memory.write(addr, val);
+            cpu.write(addr, val);
             *cpu.HL() -= 1;
             2
         },
 
         0x0A => {
             let addr = *cpu.BC();
-            *cpu.A() = cpu.memory.read(addr);
+            *cpu.A() = cpu.read(addr);
             2
         },
         0x1A => {
             let addr = *cpu.DE();
-            *cpu.A() = cpu.memory.read(addr);
+            *cpu.A() = cpu.read(addr);
             2
         },
         0x2A => {
             let addr = *cpu.HL();
-            *cpu.A() = cpu.memory.read(addr);
+            *cpu.A() = cpu.read(addr);
             *cpu.HL() = cpu.HL().wrapping_add(1);
             2
         },
         0x3A => {
             let addr = *cpu.HL();
-            *cpu.A() = cpu.memory.read(addr);
+            *cpu.A() = cpu.read(addr);
             *cpu.HL() = cpu.HL().wrapping_sub(1);
             2
         },
@@ -499,36 +499,36 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
         0xE0 => {
             let addr = 0xFF00 + cpu.load_u8() as u16;
             let val = *cpu.A();
-            cpu.memory.write(addr, val);
+            cpu.write(addr, val);
             3
         },
         0xF0 => {
             let addr = 0xFF00 + cpu.load_u8() as u16;
-            *cpu.A() = cpu.memory.read(addr);
+            *cpu.A() = cpu.read(addr);
             3
         },
 
         0xE2 => {
             let addr = 0xFF00 + *cpu.C() as u16;
             let val = *cpu.A();
-            cpu.memory.write(addr, val);
+            cpu.write(addr, val);
             2
         },
         0xF2 => {
             let addr = 0xFF00 + *cpu.C() as u16;
-            *cpu.A() = cpu.memory.read(addr);
+            *cpu.A() = cpu.read(addr);
             2
         },
 
         0xEA => {
             let addr = cpu.load_u16();
             let val = *cpu.A();
-            cpu.memory.write(addr, val);
+            cpu.write(addr, val);
             4
         },
         0xFA => {
             let addr = cpu.load_u16();
-            *cpu.A() = cpu.memory.read(addr);
+            *cpu.A() = cpu.read(addr);
             4
         }
 
@@ -568,8 +568,8 @@ pub fn execute(cpu: &mut CPU, inst: u8) -> u8 {
 
         0x08 => {
             let addr = cpu.load_u16();
-            cpu.memory.write(addr, cpu.SP as u8);
-            cpu.memory.write(addr+1, (cpu.SP >> 8) as u8);
+            cpu.write(addr, cpu.SP as u8);
+            cpu.write(addr+1, (cpu.SP >> 8) as u8);
             5
         },
 
