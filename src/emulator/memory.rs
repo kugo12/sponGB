@@ -96,6 +96,9 @@ impl Cartridge {
                 },
                 0x0F ..= 0x13 => {
                     self.rom = mbc::MBC3::new(data)?;
+                },
+                0x19 ..= 0x1E => {
+                    self.rom = mbc::MBC5::new(data)?;
                 }
                 _ => panic!("{:x} - unsupported cartridge type", data[0x147])
             };

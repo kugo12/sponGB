@@ -12,8 +12,8 @@ fn rom_size(val: u8) -> Result<usize, &'static str> {
     Err(&"Invalid ROM size")
 }
 
-fn rom_banks(val: u8) -> u8 {
-    2 << val
+fn rom_banks(val: u8) -> u16 {
+    2 << val as u16
 }
 
 fn ram_size(val: u8) -> Result<usize, &'static str> {
@@ -119,7 +119,7 @@ impl MBC1 {
         }
 
         Ok(Box::new(MBC1 {
-            rom_banks: rom_banks(data[0x148]),
+            rom_banks: rom_banks(data[0x148]) as u8,
             rom: data,
             ram: vec![0; ram_s],
             ram_enabled: false,
@@ -415,6 +415,105 @@ impl MemoryBankController for MBC3 {
             if self.ram_bank < 0x4 {
                 self.ram[addr as usize + self.ram_bank as usize*0x2000] = val;
             }
+        }
+    }
+}
+
+
+pub struct MBC5 {
+    rom: Vec<u8>,
+    ram: Vec<u8>,
+    ram_enabled: bool,
+    bank: u16,
+    ram_bank: u8,
+    battery: bool,
+
+    rom_bitmask: u16
+}
+
+impl MBC5 {
+    fn gen_bitmask(val: u8) -> u16 {
+        match rom_banks(val) {
+            2 =>   0b00000001,
+            4 =>   0b00000011,
+            8 =>   0b00000111,
+            16 =>  0b00001111,
+            32 =>  0b00011111,
+            64 =>  0b00111111,
+            128 => 0b01111111,
+            256 => 0b11111111,
+            512 => 0b111111111,
+            v => panic!("Unexpected MBC1 rom bank value {} from {}", v, val)
+        }
+    }
+
+    pub fn new(data: Vec<u8>) -> Result<Box<MBC5>, &'static str> {
+        let ram_s = ram_size(data[0x149])?;
+        let rom_s = rom_size(data[0x148])?;
+        let rom_bitmask = MBC5::gen_bitmask(data[0x148]);
+        let bat = data[0x147] == 0x03;
+
+        if ram_s > MBC1::MAX_RAM_SIZE {
+            return Err(&"header ram size too big for MBC1")
+        }
+        if rom_s != data.len() {
+            return Err(&"header rom size != rom size")
+        }
+
+        Ok(Box::new(MBC5 {
+            rom: data,
+            ram: vec![0; ram_s],
+            ram_enabled: false,
+            bank: 1,
+            ram_bank: 0,
+            battery: bat,
+
+            rom_bitmask: rom_bitmask
+        }))
+    }
+}
+
+impl MemoryBankController for MBC5 {
+
+    fn read_rom(&mut self, addr: u16) -> u8 {
+        match addr {
+            0x0000 ..= 0x3FFF => {
+                self.rom[addr as usize]
+            },
+            0x4000 ..= 0x7FFF => {
+                self.rom[(addr as usize&0x3FFF) + 0x4000*(self.bank&self.rom_bitmask) as usize]
+            },
+            _ => panic!()
+        }
+    }
+
+    fn write_rom(&mut self, addr: u16, mut val: u8){
+        match addr {
+            0x0000 ..= 0x1FFF => {
+                self.ram_enabled = val&0xF == 0xA;
+            },
+            0x2000 ..= 0x2FFF => {
+                self.bank = val as u16;
+            },
+            0x3000 ..= 0x3FFF => {
+                self.bank = ((val as u16&0x1) << 8) | (self.bank&0xFF);
+            },
+            0x4000 ..= 0x5FFF => {
+                self.ram_bank = val;
+            },
+            _ => ()
+        }
+    }
+
+    fn read_ram(&mut self, addr: u16) -> u8 {
+        if self.ram_enabled {
+            self.ram[addr as usize + self.ram_bank as usize*0x2000]
+        } else { 0xFF }
+    }
+
+    fn write_ram(&mut self, addr: u16, val: u8) {
+        if self.ram_enabled && self.ram.len() > 0 {
+            self.ram[addr as usize + self.ram_bank as usize*0x2000] = val;
         }
     }
 }
