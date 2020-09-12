@@ -2,7 +2,6 @@ use std::io::prelude::*;
 use std::fs::File;
 use std::path::Path;
 use std::error::Error;
-use raylib::prelude::*;
 
 use crate::emulator::{mbc, PPU, APU};
 
@@ -137,7 +136,6 @@ pub struct Memory {
     vram: [u8; 8192],  // 0x8000 - 0x9FFF 8kB
     ram: [u8; 8192], // 0xC000 - 0xDFFF 8kB + echo at 0xE000 - 0xFDFF
     OAM: [u8; 160],  // 0xFE00 - 0xFE9F sprite attribute memory
-    io: [u8; 128],  // 0xFF00 - 0xFF7F i/o ports
     hram: [u8; 127],  // 0xFF80 - 0xFFFE high ram
     pub IF: u8,  // interrupt flag 0xFF0F
     pub IER: u8,  // interrupt enable register 0xFFFF
@@ -170,7 +168,6 @@ impl Memory {
             vram: [0; 8192],
             ram: [0; 8192],
             OAM: [0; 160],
-            io: [0; 128],
             hram: [0; 127],
             IF: 0b11100000,
             IER: 0b11100000,

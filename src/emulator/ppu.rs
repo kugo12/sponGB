@@ -1,24 +1,26 @@
 use raylib::prelude::*;
 
 
+const COLOR_MAP: [Color; 4] = [Color::WHITE, Color::LIGHTGRAY, Color::GRAY, Color::BLACK];
+
 pub enum PPU_MODE {
-    OAM,
-    DRAW,
     HBLANK,
-    VBLANK
+    VBLANK,
+    OAM,
+    DRAW
 }
 
 #[derive(Copy, Clone)]
 pub enum Pixel_palette {  // can be used to differentiate between bg/window and sprite too
     BG,  // bg and window actually
-    OBP1,
-    OBP2
+    OBP0,
+    OBP1
 }
 
 pub struct Pixel_FIFO {
     palette: Pixel_palette,
     color: u8,
-    priority: Option<bool>
+    priority: bool
 }
 
 #[derive(Copy, Clone)]
@@ -29,11 +31,15 @@ struct Sprite {
     x_flip: bool,
     y_flip: bool,
     priority: bool,
-    palette: bool  // false - obp1, true = obp2
+    palette: Pixel_palette
 }
 
 impl Sprite {
     pub fn new(data: &[u8]) -> Sprite {
+        let palette = if data[3]&0x10 != 0 {
+            Pixel_palette::OBP1
+        } else { Pixel_palette::OBP0 };
+
         Sprite {
             x: data[1],
             y: data[0],
@@ -41,7 +47,7 @@ impl Sprite {
             x_flip: data[3]&0x20 != 0,
             y_flip: data[3]&0x40 != 0,
             priority: data[3]&0x80 != 0,
-            palette: data[3]&0x10 != 0
+            palette: palette
         }
     }
 
@@ -68,24 +74,8 @@ fn compose_two_bytes(low: u8, high: u8) -> [u8; 8] {
     pixels
 }
 
-fn map_to_palette(pixel: u8, palette: u8) -> u8 {
-    match pixel&0x03 {
-        0 => palette&0x03,
-        1 => (palette&0x0C) >> 2,
-        2 => (palette&0x30) >> 4,
-        3 => (palette&0xC0) >> 6,
-        _ => panic!()
-    }
-}
-
-fn map_color(color: u8) -> Color {
-    match color&0x03 {
-        0 => Color::WHITE,
-        1 => Color::LIGHTGRAY,
-        2 => Color::GRAY,
-        3 => Color::BLACK,
-        _ => panic!()
-    }
+fn map_to_palette(pixel: u8, palette: u8) -> usize {
+    ((palette >> (pixel << 1)) & 0x3) as usize
 }
 
 
@@ -106,6 +96,7 @@ pub struct Draw {
 
 impl Draw {
     pub fn new() -> Draw {
+        set_trace_log(raylib::consts::TraceLogType::LOG_NONE);
         let (mut handle, thread) = raylib::init()
             .size(160*2, (144+192+1)*2)
             .title("Gameboy emulator")
@@ -160,7 +151,7 @@ impl Draw {
                 pixel_pos = (j*8 + i*128)*3;
                 let p = compose_two_bytes(vram[vram_pos], vram[vram_pos+1]);
                 for pix in p.iter() {
-                    let a = map_color(*pix);
+                    let a = COLOR_MAP[*pix as usize];
                     self.tile_arr[pixel_pos] = a.r;
                     self.tile_arr[pixel_pos+1] = a.g;
                     self.tile_arr[pixel_pos+2] = a.b;
@@ -246,9 +237,7 @@ pub struct PPU {
     ly: u8,    // FF44
     lyc: u8,   // FF45
     dma: u8,   // FF46
-    bgp: u8,   // FF47
-    obp0: u8,  // FF48
-    obp1: u8,  // FF49
+    palette: [u8; 3], // Order as in Pixel_palette enum
     wy: u8,    // FF4A
     wx: u8,    // FF4B
 
@@ -290,9 +279,7 @@ impl PPU {
             ly: 0,       // FF44
             lyc: 0,      // FF45
             dma: 0,      // FF46
-            bgp: 0xFC,   // FF47
-            obp0: 0xFF,  // FF48
-            obp1: 0xFF,  // FF49
+            palette: [0; 3],
             wy: 0,       // FF4A
             wx: 0,       // FF4B
 
@@ -358,7 +345,7 @@ impl PPU {
                     self.ly = 0;
                     self.window_enabled = false;
                     self.window_line = 0;
-                    self.stat = self.stat&0b11111100 | 0b10;
+                    self.set_stat(PPU_MODE::OAM);
                 } else if old_en && !self.lcd_enabled {
                     self.d.frame = [0; 144*160*3];
                 }
@@ -379,9 +366,9 @@ impl PPU {
             0xFF44 => (),  // ly is read only or reset the counter on write?
             0xFF45 => self.lyc = val,
             0xFF46 => self.dma = val,  // init dma here in future
-            0xFF47 => self.bgp = val,
-            0xFF48 => self.obp0 = val,
-            0xFF49 => self.obp1 = val,
+            0xFF47 => self.palette[Pixel_palette::BG as usize] = val,
+            0xFF48 => self.palette[Pixel_palette::OBP0 as usize] = val,
+            0xFF49 => self.palette[Pixel_palette::OBP1 as usize] = val,
             0xFF4A => self.wy = val,  // window visible when smaller than 144
             0xFF4B => self.wx = val,  // window visible when smaller than 167
             _ => panic!("Tried to write at 0x{:x} to ppu", addr)
@@ -398,13 +385,18 @@ impl PPU {
             0xFF44 => self.ly,
             0xFF45 => self.lyc,
             0xFF46 => self.dma,  // write only?
-            0xFF47 => self.bgp,
-            0xFF48 => self.obp0,
-            0xFF49 => self.obp1,
+            0xFF47 => self.palette[Pixel_palette::BG as usize],
+            0xFF48 => self.palette[Pixel_palette::OBP0 as usize],
+            0xFF49 => self.palette[Pixel_palette::OBP1 as usize],
             0xFF4A => self.wy,
             0xFF4B => self.wx,
             _ => panic!()
         }
+    }
+
+    #[inline]
+    fn set_stat(&mut self, mode: PPU_MODE) {
+        self.stat = (self.stat&0xFC) | mode as u8;
     }
 
     #[inline]
@@ -427,7 +419,7 @@ impl PPU {
             OAM => {
                 if self.cycles == 79 {
                     self.mode = DRAW;
-                    self.stat |= 0b11;
+                    self.set_stat(DRAW);
                     
                     if self.wy == self.ly {
                         self.window_y_trigger = true;
@@ -435,7 +427,7 @@ impl PPU {
                 }
 
                 if self.cycles == 0 {
-                    self.stat = self.stat&0b11111100 | 0b10;
+                    self.set_stat(OAM);
                     if self.stat&0x20 != 0 { *IF |= 0b10; }
                 }
                 
@@ -453,10 +445,10 @@ impl PPU {
                 self.draw_timing += 1;
                 if !a {
                     self.mode = HBLANK;
-                    //println!("{}", self.draw_timing);
+                    self.set_stat(HBLANK);
+                    // println!("{}", self.draw_timing);
                     self.draw_timing = 0;
                     if self.stat&0x08 != 0 { *IF |= 0b10; }
-                    self.stat = self.stat&0b11111100;
                 }
                 self.cycles += 1;
             },
@@ -478,9 +470,9 @@ impl PPU {
 
                     if self.ly == 144 {
                         self.mode = VBLANK;
-                        *IF |= 0b00000001;
+                        self.set_stat(VBLANK);
+                        *IF |= 0b1;
                         if self.stat&0x10 != 0 { *IF |= 0b10; }
-                        self.stat = self.stat&0b11111100 | 0b1;
                     } else {
                         self.mode = OAM;
                         self.sprites = vec![];  // clear oam sprite buffer
@@ -556,24 +548,23 @@ impl PPU {
                 let px = if sprite.x < 8 {
                     &_px[8-sprite.x as usize..8]
                 } else { &_px[..] };
-                let palette = if sprite.palette { Pixel_palette::OBP2 } else { Pixel_palette::OBP1 };
 
                 for (i, val) in px.iter().enumerate() {
                     if i + 1 > self.FIFO_sprite.len() { // push to vec
                         self.FIFO_sprite.push({
                             Pixel_FIFO {
-                                palette: palette,
+                                palette: sprite.palette,
                                 color: *val,
-                                priority: Some(sprite.priority)
+                                priority: sprite.priority
                             }
                         })
                     } else { // compose
                         let other_px = &self.FIFO_sprite[i];
                         if other_px.color == 0 {
                             self.FIFO_sprite[i] = Pixel_FIFO {
-                                palette: palette,
+                                palette: sprite.palette,
                                 color: *val,
-                                priority: Some(sprite.priority)
+                                priority: sprite.priority
                             }
                         }
                     }
@@ -659,7 +650,7 @@ impl PPU {
                                 Pixel_FIFO {
                                     palette: Pixel_palette::BG,
                                     color: *pixel,
-                                    priority: None
+                                    priority: false
                                 }
                             );
                         }
@@ -688,24 +679,15 @@ impl PPU {
                 }
 
                 let pixel = self.FIFO.remove(0);
-                let mut color = map_color(map_to_palette(pixel.color, self.bgp));
+                let mut color = COLOR_MAP[map_to_palette(pixel.color, self.palette[Pixel_palette::BG as usize])];
                 if !self.bg_enabled && self.fetcher.tile_mode == BG {
                     color = Color::WHITE;
                 }
 
                 if self.FIFO_sprite.len() > 0 {
                     let sprite_pixel = self.FIFO_sprite.remove(0);
-                    if sprite_pixel.color != 0 {
-                        if sprite_pixel.priority == Some(false) || color == Color::WHITE {
-                            color = {
-                                let c = match sprite_pixel.palette {
-                                    Pixel_palette::OBP1 => map_to_palette(sprite_pixel.color, self.obp0),
-                                    Pixel_palette::OBP2 => map_to_palette(sprite_pixel.color, self.obp1),
-                                    _ => panic!("Sprite pixels shouldn't have background pixel palette")
-                                };
-                                map_color(c)
-                            }
-                        }
+                    if sprite_pixel.color != 0 && (!sprite_pixel.priority || color == Color::WHITE) {
+                        color = COLOR_MAP[map_to_palette(sprite_pixel.color, self.palette[sprite_pixel.palette as usize])];
                     }
                 }
 
