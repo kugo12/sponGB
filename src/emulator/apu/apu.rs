@@ -169,7 +169,7 @@ pub struct APU {
     frame_clock: u8,
     sample_clock: u32,
 
-    stream: AudioStream,
+    stream: raylib::ffi::AudioStream,
     audio: RaylibAudio,
     samples: [i16; BUFFER_SIZE],
 }
@@ -193,7 +193,7 @@ impl APU {
             frame_clock: 0,
             sample_clock: 0,
 
-            stream: stream,
+            stream: stream.to_raw(),
             audio: audio,
             samples: [0; BUFFER_SIZE],
         };
@@ -246,7 +246,7 @@ impl APU {
             // sound channel 4
             0xFF20 => self.sc4.length.read() | 0xC0,  // two MSb unused
             0xFF21 => self.sc4.envelope.read(),
-            0xFF22 => self.sc4.polynomial_counter,
+            0xFF22 => self.sc4.FF22_read(),
             0xFF23 => self.sc4.counter_consecutive | 0x3F,
 
             // sound control registers
@@ -284,8 +284,8 @@ impl APU {
             // sound channel 4
             0xFF20 => self.sc4.length.write(val),
             0xFF21 => self.sc4.envelope.write(val),
-            0xFF22 => self.sc4.polynomial_counter = val,
-            0xFF23 => self.sc4.counter_consecutive = val,
+            0xFF22 => self.sc4.FF22_write(val),
+            0xFF23 => self.sc4.FF23_write(val),
 
             // sound control registers
             0xFF24 => self.volume.write(val),
@@ -309,7 +309,7 @@ impl APU {
                 self.sc1.length_duty.tick(&mut self.sc1.enabled);
                 self.sc2.length_duty.tick(&mut self.sc2.enabled);
                 self.sc3.length.tick(&mut self.sc3.enable);
-                self.sc4.length.tick(&mut true);
+                self.sc4.length.tick(&mut self.sc4.enable);
             }
             if self.frame_clock == 7 {  // volume envelope
                 self.sc1.envelope.tick();
@@ -354,7 +354,14 @@ impl APU {
             self.samples[pos as usize + 1] = r*4;
 
             if pos == BUFFER_SIZE as u32 - 2 {
-                self.stream.update_audio_stream(&self.samples);
+                unsafe {
+                    while !raylib::ffi::IsAudioStreamProcessed(self.stream) {}
+                    raylib::ffi::UpdateAudioStream(
+                        self.stream,
+                        self.samples.as_ptr() as *const std::os::raw::c_void,
+                        BUFFER_SIZE as i32
+                    );
+                }
                 self.sample_clock = 0;
             } else {
                 self.sample_clock += 1;

@@ -15,6 +15,6 @@ pub const DUTY_CYCLE: [[i16; 8]; 4] = [
     [-1, 1, 1, 1, 1, 1, 1, -1]
 ];
 
-pub const SAMPLE_RATE: u32 = 48211;
+pub const SAMPLE_RATE: u32 = 48000;
 pub const SAMPLE_SIZE: u32 = 16;
 

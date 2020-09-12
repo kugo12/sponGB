@@ -31,7 +31,7 @@ impl Sweep {
         self.shift = val&0x7;
     }
 
-    pub fn calculate(&mut self, enable: &mut bool) -> u16 {
+    pub fn calculate(&mut self) -> u16 {
         let freq = if self.negate != 0 {  // subtract
             self.freq - (self.freq >> self.shift)
         } else { // add
@@ -39,7 +39,7 @@ impl Sweep {
         };
 
         if freq > 2047 {
-            *enable = false;
+            self.enabled = false;
         }
 
         freq
@@ -75,10 +75,6 @@ impl SCh2 {
             sweep_enable: sweep_enable,
             enabled: false
         };
-
-        if !sweep_enable {
-            sq.sweep.enabled = true;
-        }
 
         sq
     }
@@ -128,7 +124,7 @@ impl SCh2 {
             self.sweep.timer = self.sweep.period;
             self.sweep.enabled = self.sweep.period != 0 || self.sweep.shift != 0;
             if self.sweep.shift != 0 {
-                self.sweep.calculate(&mut self.enabled);
+                self.sweep.calculate();
             }
         }
     }
@@ -141,12 +137,12 @@ impl SCh2 {
             if self.sweep.timer == 0 && self.sweep.enabled {
                 self.sweep.timer = self.sweep.period;
 
-                let new = self.sweep.calculate(&mut self.enabled);
+                let new = self.sweep.calculate();
                 if self.sweep.shift > 0 && new < 2048 {
                     self.sweep.freq = new;
                     self.freq = new;
 
-                    self.sweep.calculate(&mut self.enabled);
+                    self.sweep.calculate();
                 }
             }
         }
