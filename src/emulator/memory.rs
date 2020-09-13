@@ -141,12 +141,14 @@ pub struct Memory {
     apu: APU,
     pub mode: MODE,
 
-    vram: [u8; 8192],  // 0x8000 - 0x9FFF 8kB
-    ram: [u8; 8192], // 0xC000 - 0xDFFF 8kB + echo at 0xE000 - 0xFDFF
+    vram: [u8; 16*1024],  // 0x8000 - 0x9FFF 16kB (2 banks in cgb)
+    ram: [u8; 32*1024], // 0xC000 - 0xDFFF 32kB (8 banks in cgb) + echo at 0xE000 - 0xFDFF
     OAM: [u8; 160],  // 0xFE00 - 0xFE9F sprite attribute memory
     hram: [u8; 127],  // 0xFF80 - 0xFFFE high ram
     pub IF: u8,  // interrupt flag 0xFF0F
     pub IER: u8,  // interrupt enable register 0xFFFF
+    vram_bank: u8,
+    ram_bank: u8,
 
     // timer registers
     DIV: u16,  // FF04
@@ -174,12 +176,14 @@ impl Memory {
             apu: apu,
             mode: MODE::DMG,
 
-            vram: [0; 8192],
-            ram: [0; 8192],
+            vram: [0; 16*1024],
+            ram: [0; 32*1024],
             OAM: [0; 160],
             hram: [0; 127],
             IF: 0b11100000,
             IER: 0b11100000,
+            ram_bank: 1,
+            vram_bank: 0,
 
             DIV: 0,
             TIMA: 0,
@@ -222,9 +226,10 @@ impl Memory {
 
         match addr {
             0x0000 ..= 0x7FFF => self.cart.read_rom(addr),
-            0x8000 ..= 0x9FFF => self.vram[(addr-0x8000) as usize],
+            0x8000 ..= 0x9FFF => self.vram[(addr as usize&0x1FFF) + self.vram_bank as usize*0x2000],
             0xA000 ..= 0xBFFF => self.cart.read_ram(addr-0xa000),
-            0xC000 ..= 0xDFFF => self.ram[(addr-0xc000) as usize],
+            0xC000 ..= 0xCFFF => self.ram[(addr&0xFFF) as usize],
+            0xD000 ..= 0xDFFF => self.ram[(addr as usize&0xFFF) + self.ram_bank as usize*0x1000],
             0xE000 ..= 0xFDFF => self.ram[(addr-0xe000) as usize],
             0xFE00 ..= 0xFE9F => self.OAM[(addr-0xfe00) as usize],
 
@@ -247,6 +252,8 @@ impl Memory {
             0xFF0F => self.IF,
             0xFF10 ..= 0xFF3F => self.apu.read(addr),
             0xFF40 ..= 0xFF4B => self.ppu.read(addr),
+            0xFF4F => self.vram_bank | 0xFE,
+            0xFF70 => self.ram_bank | 0xF8, // only 3 LSb used
             0xFF80 ..= 0xFFFE => self.hram[(addr-0xff80) as usize],
             0xFFFF => self.IER,
             _ => 0xFF
@@ -254,26 +261,15 @@ impl Memory {
     }
 
     #[inline]
-    pub fn write(&mut self, addr: u16, val: u8) {
+    pub fn write(&mut self, addr: u16, mut val: u8) {
         match addr {
-            0x0000 ..= 0x7FFF => {
-                self.cart.write_rom(addr, val)
-            },
-            0x8000 ..= 0x9FFF => {
-                self.vram[(addr-0x8000) as usize] = val
-            },
-            0xA000 ..= 0xBFFF => {
-                self.cart.write_ram(addr-0xA000, val)
-            },
-            0xC000 ..= 0xDFFF => {
-                self.ram[(addr-0xc000) as usize] = val
-            },
-            0xE000 ..= 0xFDFF => {
-                self.ram[(addr-0xe000) as usize] = val
-            },
-            0xFE00 ..= 0xFE9F => {
-                self.OAM[(addr-0xfe00) as usize] = val
-            },
+            0x0000 ..= 0x7FFF => self.cart.write_rom(addr, val),
+            0x8000 ..= 0x9FFF => self.vram[(addr as usize&0x1FFF) + self.vram_bank as usize * 0x2000] = val,
+            0xA000 ..= 0xBFFF => self.cart.write_ram(addr-0xA000, val),
+            0xC000 ..= 0xCFFF => self.ram[(addr&0xFFF) as usize] = val,
+            0xD000 ..= 0xDFFF => self.ram[(addr as usize&0xFFF) + self.ram_bank as usize*0x1000] = val,
+            0xE000 ..= 0xFDFF => self.ram[(addr-0xe000) as usize] = val,
+            0xFE00 ..= 0xFE9F => self.OAM[(addr-0xfe00) as usize] = val,
 
             // Memory mapped io
             0xFF00 => {
@@ -320,9 +316,17 @@ impl Memory {
             0xFF40 ..= 0xFF4B => {
                 self.ppu.write(addr, val)
             },
+            0xFF4F if self.mode == MODE::CGB => {
+                self.vram_bank = val&0x1;
+            },
             0xFF50 => {
                 self.cart.bootrom = vec![];
                 self.cart.bootrom_enable = false;
+            },
+            0xFF70 if self.mode == MODE::CGB => {
+                val = val&0x07;
+                if val == 0 { val = 1; }
+                self.ram_bank = val;
             },
             0xFF80..=0xFFFE => {
                 self.hram[(addr-0xff80) as usize] = val
