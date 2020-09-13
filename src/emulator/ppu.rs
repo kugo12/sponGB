@@ -80,6 +80,27 @@ fn map_to_palette(pixel: u8, palette: u8) -> usize {
     ((palette >> (pixel << 1)) & 0x3) as usize
 }
 
+fn cgb_get_color_byte_by_index(index: u8, palette: &[[Color; 4]; 8]) -> u8 {
+    let color = &palette[(index >> 3) as usize][((index >> 1)&0x3) as usize];
+    
+    if index&0x1 != 0 {  // second byte
+        (color.b << 2) | (color.g >> 3)
+    } else {  // first byte
+        (color.g << 5) | color.r 
+    }
+}
+
+fn cgb_set_color_byte_by_index(index: u8, palette: &mut [[Color; 4]; 8], val: u8) {
+    let color = &mut palette[(index >> 3) as usize][((index >> 1)&0x3) as usize];
+
+    if index&0x1 != 0 {  // second byte
+        color.g = (color.g&0x7) | ((val&0x3) << 3);
+        color.b = (val >> 2)&0x1F;
+    } else {  // first byte
+        color.r = val&0x1F;
+        color.g = (color.g&0x18) | (val >> 5);
+    }
+}
 
 pub struct Draw {
     pub handle: RaylibHandle,
@@ -243,6 +264,16 @@ pub struct PPU {
     wy: u8,    // FF4A
     wx: u8,    // FF4B
 
+    // CGB background palette
+    bg_index: u8,
+    bg_ai: u8,
+    bg_palette: [[Color; 4]; 8],
+
+    // CGB object palette
+    obj_index: u8,
+    obj_ai: u8,
+    obj_palette: [[Color; 4]; 8],
+
     // oam buffer sprites
     sprites: Vec<Sprite>,
     FIFO: Vec<Pixel_FIFO>,
@@ -284,6 +315,15 @@ impl PPU {
             palette: [0; 3],
             wy: 0,       // FF4A
             wx: 0,       // FF4B
+
+
+            bg_index: 0,
+            bg_ai: 0,
+            bg_palette: [[Color::WHITE; 4]; 8],
+        
+            obj_index: 0,
+            obj_ai: 0,
+            obj_palette: [[Color::WHITE; 4]; 8],
 
             sprites: vec![],
             FIFO: vec![],
@@ -373,6 +413,33 @@ impl PPU {
             0xFF49 => self.palette[Pixel_palette::OBP1 as usize] = val,
             0xFF4A => self.wy = val,  // window visible when smaller than 144
             0xFF4B => self.wx = val,  // window visible when smaller than 167
+
+            0xFF68 => {
+                self.bg_index = val&0x1F;
+                self.bg_ai = val&0x1;
+            },
+            0xFF69 => {
+                cgb_set_color_byte_by_index(self.bg_index, &mut self.bg_palette, val);
+                if self.bg_ai != 0 {
+                    self.bg_index += 1;
+                    if self.bg_index > 0x1F {
+                        self.bg_index = 0;
+                    }
+                }
+            },
+            0xFF6A => {
+                self.obj_index = val&0x1F;
+                self.obj_ai = val&0x1;
+            },
+            0xFF6B => {
+                cgb_set_color_byte_by_index(self.obj_index, &mut self.obj_palette, val);
+                if self.obj_ai != 0 {
+                    self.obj_index += 1;
+                    if self.obj_index > 0x1F {
+                        self.obj_index = 0;
+                    }
+                }
+            }
             _ => panic!("Tried to write at 0x{:x} to ppu", addr)
         }
     }
@@ -392,6 +459,11 @@ impl PPU {
             0xFF49 => self.palette[Pixel_palette::OBP1 as usize],
             0xFF4A => self.wy,
             0xFF4B => self.wx,
+
+            0xFF68 => self.bg_index | self.bg_ai,
+            0xFF69 => cgb_get_color_byte_by_index(self.bg_index, &self.bg_palette),
+            0xFF6A => self.obj_index | self.obj_ai,
+            0xFF6B => cgb_get_color_byte_by_index(self.obj_index, &self.obj_palette),
             _ => panic!()
         }
     }

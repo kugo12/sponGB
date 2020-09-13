@@ -3,13 +3,12 @@ use std::error::Error;
 
 mod emulator;
 
-
 fn main() -> Result<(), Box<dyn Error>> {
     let mut c = emulator::CPU::new();
-    let p = Path::new(&"bootrom.gb");
-    let r = Path::new(&"pkred.gb");
-    c.memory.cart.load_from_file(&r)?;
-    c.memory.cart.load_bootrom(&p)?;
+    let p = Path::new(&"gbc_bootrom.gbc");
+    let r = Path::new(&"pkcrys.gbc");
+    c.memory.load_rom(&r)?;
+    c.memory.load_bootrom(&p)?;
     
     {
         let h = &c.memory.ppu.d.thread;

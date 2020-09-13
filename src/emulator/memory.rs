@@ -264,6 +264,7 @@ impl Memory {
             0xFF53 => (self.vdma_dst >> 8) as u8,
             0xFF54 => self.vdma_dst as u8,
             0xFF55 => 0xFF,
+            0xFF68 ..= 0xFF6B => self.ppu.read(addr),
             0xFF70 => self.ram_bank | 0xF8, // only 3 LSb used
             0xFF80 ..= 0xFFFE => self.hram[(addr-0xff80) as usize],
             0xFFFF => self.IER,
@@ -353,7 +354,10 @@ impl Memory {
                     let v = self.read(self.vdma_src + i);
                     self.write((0x8000 | self.vdma_dst) + 1, v);
                 }
-            }
+            },
+            0xFF68 ..= 0xFF6B => {
+                self.ppu.write(addr, val)
+            },
             0xFF70 if self.mode == MODE::CGB => {
                 val = val&0x07;
                 if val == 0 { val = 1; }
