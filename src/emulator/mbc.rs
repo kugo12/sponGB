@@ -1,3 +1,5 @@
+#![allow(non_camel_case_types)]
+
 pub trait MemoryBankController {
     fn read_rom(&mut self, addr: u16) -> u8;
     fn write_rom(&mut self, addr: u16, val: u8);
@@ -51,9 +53,9 @@ impl MemoryBankController for dummyMBC {
             0xFF
         }
     }
-    fn write_rom(&mut self, addr: u16, val: u8) {}
-    fn read_ram(&mut self, addr: u16) -> u8 { 0xFF }
-    fn write_ram(&mut self, addr: u16, val: u8) {}
+    fn write_rom(&mut self, _addr: u16, _val: u8) {}
+    fn read_ram(&mut self, _addr: u16) -> u8 { 0xFF }
+    fn write_ram(&mut self, _addr: u16, _val: u8) {}
 }
 
 
@@ -71,9 +73,9 @@ impl noMBC {
 
 impl MemoryBankController for noMBC {
     fn read_rom(&mut self, addr: u16) -> u8 { self.rom[addr as usize] }
-    fn write_rom(&mut self, addr: u16, val: u8){}
-    fn read_ram(&mut self, addr: u16) -> u8 { 0xFF }
-    fn write_ram(&mut self, addr: u16, val: u8) {}
+    fn write_rom(&mut self, _addr: u16, _val: u8){}
+    fn read_ram(&mut self, _addr: u16) -> u8 { 0xFF }
+    fn write_ram(&mut self, _addr: u16, _val: u8) {}
 }
 
 
@@ -116,6 +118,9 @@ impl MBC1 {
         }
         if rom_s != data.len() {
             return Err(&"header rom size != rom size")
+        }
+        if data.len() > MBC1::MAX_ROM_SIZE {
+            return Err(&"Rom size too big for MBC1")
         }
 
         Ok(Box::new(MBC1 {
@@ -333,10 +338,13 @@ impl MBC3 {
         let bitmask = MBC3::gen_bitmask(data[0x148]);
 
         if ram_s > MBC3::MAX_RAM_SIZE {
-            return Err(&"header ram size too big for MBC1")
+            return Err(&"header ram size too big for MBC3")
         }
         if rom_s != data.len() {
             return Err(&"header rom size != rom size")
+        }
+        if data.len() > MBC3::MAX_ROM_SIZE {
+            return Err(&"Rom is bigger than MBC3 max rom size")
         }
 
         Ok(Box::new(MBC3 {
@@ -443,7 +451,7 @@ impl MBC5 {
             128 => 0b01111111,
             256 => 0b11111111,
             512 => 0b111111111,
-            v => panic!("Unexpected MBC1 rom bank value {} from {}", v, val)
+            v => panic!("Unexpected MBC5 rom bank value {} from {}", v, val)
         }
     }
 
@@ -454,7 +462,7 @@ impl MBC5 {
         let bat = data[0x147] == 0x03;
 
         if ram_s > MBC1::MAX_RAM_SIZE {
-            return Err(&"header ram size too big for MBC1")
+            return Err(&"header ram size too big for MBC5")
         }
         if rom_s != data.len() {
             return Err(&"header rom size != rom size")
@@ -487,7 +495,7 @@ impl MemoryBankController for MBC5 {
         }
     }
 
-    fn write_rom(&mut self, addr: u16, mut val: u8){
+    fn write_rom(&mut self, addr: u16, val: u8){
         match addr {
             0x0000 ..= 0x1FFF => {
                 self.ram_enabled = val&0xF == 0xA;

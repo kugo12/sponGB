@@ -1,6 +1,6 @@
 use crate::emulator::apu::LengthDuty;
 
-pub struct SCh3 {  // Wave
+pub struct Wave {  // Wave
     pub enable: bool,       // 0xFF1A NR30
     pub length: LengthDuty,       // 0xFF1B NR31
     pub volume: u8, // 0xFF1C NR32
@@ -13,9 +13,9 @@ pub struct SCh3 {  // Wave
     sample_pos: u8,
 }
 
-impl SCh3 {
-    pub fn new() -> SCh3 {
-        SCh3 {
+impl Wave {
+    pub fn new() -> Wave {
+        Wave {
             enable: false,
             length: LengthDuty::new(),
             volume: 0,

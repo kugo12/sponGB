@@ -1,9 +1,10 @@
-use crate::emulator::apu::*;
-use crate::emulator::Draw;
+use crate::emulator::apu::{Square, Wave, Noise, DUTY_CYCLE};
 
 use raylib::prelude::*;
 
 const BUFFER_SIZE: usize = 8192;
+const SAMPLE_RATE: u32 = 48000;
+const SAMPLE_SIZE: u32 = 16;
 
 pub struct Envelope {
     pub volume: u8,
@@ -160,17 +161,17 @@ pub struct APU {
     volume: ChannelVolume,  // 0xFF24 NR50
     sch_output: ChannelOutput,         // 0xFF25 NR51
     sch_control: u8, // 0xFF26 NR52
-    sc1: SCh2,
-    sc2: SCh2,
-    sc3: SCh3,
-    sc4: SCh4,
+    sc1: Square,
+    sc2: Square,
+    sc3: Wave,
+    sc4: Noise,
 
     clock: u16,
     frame_clock: u8,
     sample_clock: u32,
 
     stream: raylib::ffi::AudioStream,
-    audio: RaylibAudio,
+    _audio: RaylibAudio,
     samples: [i16; BUFFER_SIZE],
 }
 
@@ -184,17 +185,17 @@ impl APU {
             volume: ChannelVolume::new(),
             sch_output: ChannelOutput::new(),
             sch_control: 255,
-            sc1: SCh2::new(true),
-            sc2: SCh2::new(false),
-            sc3: SCh3::new(),
-            sc4: SCh4::new(),
+            sc1: Square::new(true),
+            sc2: Square::new(false),
+            sc3: Wave::new(),
+            sc4: Noise::new(),
 
             clock: 0,
             frame_clock: 0,
             sample_clock: 0,
 
             stream: stream.to_raw(),
-            audio: audio,
+            _audio: audio,
             samples: [0; BUFFER_SIZE],
         };
 
@@ -246,7 +247,7 @@ impl APU {
             // sound channel 4
             0xFF20 => self.sc4.length.read() | 0xC0,  // two MSb unused
             0xFF21 => self.sc4.envelope.read(),
-            0xFF22 => self.sc4.FF22_read(),
+            0xFF22 => self.sc4.ff22_read(),
             0xFF23 => self.sc4.counter_consecutive | 0x3F,
 
             // sound control registers
@@ -284,8 +285,8 @@ impl APU {
             // sound channel 4
             0xFF20 => self.sc4.length.write(val),
             0xFF21 => self.sc4.envelope.write(val),
-            0xFF22 => self.sc4.FF22_write(val),
-            0xFF23 => self.sc4.FF23_write(val),
+            0xFF22 => self.sc4.ff22_write(val),
+            0xFF23 => self.sc4.ff23_write(val),
 
             // sound control registers
             0xFF24 => self.volume.write(val),

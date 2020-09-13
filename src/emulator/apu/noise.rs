@@ -2,7 +2,7 @@ use crate::emulator::apu::{Envelope, LengthDuty};
 
 const DIVISOR_CODE: [u16; 8] = [8, 16, 32, 48, 64, 80, 96, 112];
 
-pub struct SCh4 {  // Noise
+pub struct Noise {  // Noise
     pub length: LengthDuty,              // 0xFF20 NR41
     pub envelope: Envelope,            // 0xFF21 NR42
     pub counter_consecutive: u8, // 0xFF23 NR44
@@ -15,9 +15,9 @@ pub struct SCh4 {  // Noise
     output: i16
 }
 
-impl SCh4 {
-    pub fn new() -> SCh4 {
-        SCh4 {
+impl Noise {
+    pub fn new() -> Noise {
+        Noise {
             length: LengthDuty::new(),
             envelope: Envelope::new(),
             counter_consecutive: 0,
@@ -31,7 +31,7 @@ impl SCh4 {
         }
     }
 
-    pub fn tick_LFSR(&mut self) {
+    pub fn tick_lfsr(&mut self) {
         let xor_val = ((self.lfsr >> 1) ^ self.lfsr) & 0x1;
         self.lfsr >>= 1;
         self.lfsr = (self.lfsr & !0x4000) | (xor_val << 14);
@@ -51,26 +51,26 @@ impl SCh4 {
             self.timer -= 1;
         }
         if self.timer == 0 {
-            self.tick_LFSR();
+            self.tick_lfsr();
             self.timer = DIVISOR_CODE[self.divisor as usize] << self.clock_shift;
         }
     }
 
-    pub fn FF23_write(&mut self, val: u8) {
+    pub fn ff23_write(&mut self, val: u8) {
         self.counter_consecutive = val&0x40;
         if val&0x80 != 0 {
             self.trigger();
         }
     }
 
-    pub fn FF22_write(&mut self, val: u8) {
+    pub fn ff22_write(&mut self, val: u8) {
         self.width_mode = val&0x8;
         self.clock_shift = (val&0xF0) >> 4;
         self.divisor = val&0x7;
         self.timer = DIVISOR_CODE[self.divisor as usize] << self.clock_shift;
     }
 
-    pub fn FF22_read(&self) -> u8 {
+    pub fn ff22_read(&self) -> u8 {
         (self.clock_shift << 4) | self.width_mode | self.divisor
     }
 

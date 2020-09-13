@@ -46,7 +46,7 @@ impl Sweep {
     }
 }
 
-pub struct SCh2 {  // Tone
+pub struct Square {  // Tone
     pub length_duty: LengthDuty, // 0xFF16 NR16
     pub envelope: Envelope,    // 0xFF17 NR22
     pub freq_lo: u8,     // 0xFF18 NR23
@@ -60,9 +60,9 @@ pub struct SCh2 {  // Tone
     pub enabled: bool
 }
 
-impl SCh2 {
-    pub fn new(sweep_enable: bool) -> SCh2 {
-        let mut sq = SCh2 {
+impl Square {
+    pub fn new(sweep_enable: bool) -> Square {
+        Square {
             length_duty: LengthDuty::new(),
             envelope: Envelope::new(),
             freq_lo: 0,
@@ -74,9 +74,7 @@ impl SCh2 {
             sweep: Sweep::new(),
             sweep_enable: sweep_enable,
             enabled: false
-        };
-
-        sq
+        }
     }
 
     pub fn freq_lo_write(&mut self, val: u8) {
