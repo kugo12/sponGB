@@ -5,7 +5,7 @@ use std::fs::File;
 use std::path::Path;
 use std::error::Error;
 
-use crate::emulator::{mbc, PPU, APU};
+use crate::emulator::{mbc, PPU, APU, MODE};
 
 const TIMA_SPEED: [u16; 4] = [512, 8, 32, 128];
 
@@ -46,44 +46,45 @@ impl Cartridge {
         self.rom.write_ram(addr, val)
     }
 
-    pub fn load_bootrom(&mut self, p: &Path) -> Result<(), Box<dyn Error>> {
+    pub fn load_bootrom(&mut self, p: &Path) -> Result<MODE, Box<dyn Error>> {
         let mut file = File::open(p)?;
         let mut data: Vec<u8> = vec![];
         file.read_to_end(&mut data)?;
-
-        if data.len() != 0x100 {
+        
+        if data.len() != 0x100 && data.len() != 0x900 {
             panic!("Invalid bootrom");
         }
         self.bootrom = data;
         self.bootrom_enable = true;
 
-        Ok(())
+        if self.bootrom.len() == 0x100 {
+            Ok(MODE::DMG)
+        } else {
+            Ok(MODE::CGB)
+        }
     }
 
     pub fn load_from_vec(&mut self, v: Vec<u8>) {
         self.rom = mbc::dummyMBC::new(v)
     }
 
-    pub fn load_from_file(&mut self, p: &Path) -> Result<(), Box<dyn Error>> {
+    pub fn load_from_file(&mut self, p: &Path) -> Result<MODE, Box<dyn Error>> {
         let mut file = File::open(p)?;
         let mut data: Vec<u8> = vec![];
         file.read_to_end(&mut data)?;
 
-        self.interprete_header(data)?;
+        let mode = self.interprete_header(data)?;
 
-        Ok(())
+        Ok(mode)
     }
 
-    fn interprete_header(&mut self, data: Vec<u8>) -> Result<(), &str> {
+    fn interprete_header(&mut self, data: Vec<u8>) -> Result<MODE, &str> {
         if data.len() > 0x14F {
             if data[0x014D] != Cartridge::calculate_header_checksum(&data) {
                 return Err(&"Invalid ROM header checksum")
             }
 
-            if data[0x143] == 0xC0 {
-                return  Err(&"Gameboy Color only rom")
-            }
-
+            let cgb_mode = data[0x143];
             self.title = Cartridge::get_title(&data);
             match data[0x147] {
                 0x00 => {
@@ -104,7 +105,11 @@ impl Cartridge {
                 _ => panic!("{:x} - unsupported cartridge type", data[0x147])
             };
 
-            Ok(())
+            if cgb_mode == 0x80 || cgb_mode == 0xC0 {
+                Ok(MODE::CGB)
+            } else {
+                Ok(MODE::DMG)
+            }
         } else {
             Err(&"ROM too small")
         }
@@ -134,6 +139,7 @@ pub struct Memory {
     pub cart: Cartridge,  // ROM -> 0x0000-0x7FFF 32kB, RAM -> 0xA000-0xBFFF 8kB
     pub ppu: PPU,
     apu: APU,
+    pub mode: MODE,
 
     vram: [u8; 8192],  // 0x8000 - 0x9FFF 8kB
     ram: [u8; 8192], // 0xC000 - 0xDFFF 8kB + echo at 0xE000 - 0xFDFF
@@ -166,6 +172,7 @@ impl Memory {
             cart: Cartridge::new(),
             ppu: ppu,
             apu: apu,
+            mode: MODE::DMG,
 
             vram: [0; 8192],
             ram: [0; 8192],
@@ -189,12 +196,31 @@ impl Memory {
         }
     }
 
+    pub fn load_bootrom(&mut self, p: &Path) -> Result<(), Box<dyn Error>> {
+        self.mode = self.cart.load_bootrom(p)?;
+        Ok(())
+    }
+
+    pub fn load_rom(&mut self, p: &Path) -> Result<(), Box<dyn Error>> {
+        self.mode = self.cart.load_from_file(p)?;
+        Ok(())
+    }
+
     #[inline]
     pub fn read(&mut self, addr: u16) -> u8 {
+        if self.cart.bootrom_enable {
+            match addr {
+                0x0000 ..= 0x00FF => {
+                    return self.cart.bootrom[addr as usize]
+                }
+                0x0201 ..= 0x08FF if self.mode == MODE::CGB => {
+                    return self.cart.bootrom[addr as usize]
+                }
+                _ => ()
+            }
+        }
+
         match addr {
-            0x0000 ..= 0x00FF if self.cart.bootrom_enable => {
-                self.cart.bootrom[addr as usize]
-            },
             0x0000 ..= 0x7FFF => self.cart.read_rom(addr),
             0x8000 ..= 0x9FFF => self.vram[(addr-0x8000) as usize],
             0xA000 ..= 0xBFFF => self.cart.read_ram(addr-0xa000),
