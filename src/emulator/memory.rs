@@ -150,6 +150,9 @@ pub struct Memory {
     vram_bank: u8,
     ram_bank: u8,
 
+    vdma_src: u16,
+    vdma_dst: u16,
+
     // timer registers
     DIV: u16,  // FF04
     TIMA: u8, // FF05
@@ -184,6 +187,9 @@ impl Memory {
             IER: 0b11100000,
             ram_bank: 1,
             vram_bank: 0,
+
+            vdma_src: 0,
+            vdma_dst: 0,
 
             DIV: 0,
             TIMA: 0,
@@ -253,6 +259,11 @@ impl Memory {
             0xFF10 ..= 0xFF3F => self.apu.read(addr),
             0xFF40 ..= 0xFF4B => self.ppu.read(addr),
             0xFF4F => self.vram_bank | 0xFE,
+            0xFF51 => (self.vdma_src >> 8) as u8,
+            0xFF52 => self.vdma_src as u8,
+            0xFF53 => (self.vdma_dst >> 8) as u8,
+            0xFF54 => self.vdma_dst as u8,
+            0xFF55 => 0xFF,
             0xFF70 => self.ram_bank | 0xF8, // only 3 LSb used
             0xFF80 ..= 0xFFFE => self.hram[(addr-0xff80) as usize],
             0xFFFF => self.IER,
@@ -323,6 +334,26 @@ impl Memory {
                 self.cart.bootrom = vec![];
                 self.cart.bootrom_enable = false;
             },
+            0xFF51 => {
+                self.vdma_src = (self.vdma_src&0xFF) | ((val as u16) << 8);
+            },
+            0xFF52 => {
+                self.vdma_src = (self.vdma_src&0xFF00) | (val as u16&0xF0);
+            },
+            0xFF53 => {
+                self.vdma_dst = (self.vdma_dst&0xF0) | ((val as u16&0x1F) << 8);
+            },
+            0xFF54 => {
+                self.vdma_dst = (self.vdma_dst&0x1F00) | (val as u16&0xF0);
+            },
+            0xFF55 if self.mode == MODE::CGB => {  // TODO: "real" HDMA timings
+                let length = ((val as u16&0x7F)+1) * 0x10;
+
+                for i in 0 .. length {
+                    let v = self.read(self.vdma_src + i);
+                    self.write((0x8000 | self.vdma_dst) + 1, v);
+                }
+            }
             0xFF70 if self.mode == MODE::CGB => {
                 val = val&0x07;
                 if val == 0 { val = 1; }
