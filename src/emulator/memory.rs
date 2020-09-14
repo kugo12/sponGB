@@ -5,7 +5,7 @@ use std::fs::File;
 use std::path::Path;
 use std::error::Error;
 
-use crate::emulator::{mbc, PPU, APU, MODE};
+use crate::emulator::{mbc, PPU, APU, MODE, PPU_MODE};
 
 const TIMA_SPEED: [u16; 4] = [512, 8, 32, 128];
 
@@ -14,6 +14,7 @@ pub struct Cartridge {
     pub bootrom: Vec<u8>,
     pub bootrom_enable: bool,
     pub title: String,
+    pub gb_cart_type: MODE
 }
 
 impl Cartridge {
@@ -22,7 +23,8 @@ impl Cartridge {
             rom: mbc::dummyMBC::new(vec![]),
             bootrom: vec![],
             bootrom_enable: false,
-            title: String::new()
+            title: String::new(),
+            gb_cart_type: MODE::DMG
         }
     }
 
@@ -74,6 +76,7 @@ impl Cartridge {
         file.read_to_end(&mut data)?;
 
         let mode = self.interprete_header(data)?;
+        self.gb_cart_type = mode;
 
         Ok(mode)
     }
@@ -152,6 +155,9 @@ pub struct Memory {
 
     vdma_src: u16,
     vdma_dst: u16,
+    hdma5: u8,
+    hdma_active: bool,
+    hdma_length: u8,
 
     // timer registers
     DIV: u16,  // FF04
@@ -190,6 +196,9 @@ impl Memory {
 
             vdma_src: 0,
             vdma_dst: 0,
+            hdma5: 0,
+            hdma_active: false,
+            hdma_length: 0,
 
             DIV: 0,
             TIMA: 0,
@@ -208,11 +217,13 @@ impl Memory {
 
     pub fn load_bootrom(&mut self, p: &Path) -> Result<(), Box<dyn Error>> {
         self.mode = self.cart.load_bootrom(p)?;
+        self.ppu.gb_mode = self.mode;
         Ok(())
     }
 
     pub fn load_rom(&mut self, p: &Path) -> Result<(), Box<dyn Error>> {
         self.mode = self.cart.load_from_file(p)?;
+        self.ppu.gb_mode = self.mode;
         Ok(())
     }
 
@@ -263,8 +274,8 @@ impl Memory {
             0xFF52 => self.vdma_src as u8,
             0xFF53 => (self.vdma_dst >> 8) as u8,
             0xFF54 => self.vdma_dst as u8,
-            0xFF55 => 0xFF,
-            0xFF68 ..= 0xFF6B => self.ppu.read(addr),
+            0xFF55 => self.hdma5,
+            0xFF68 ..= 0xFF6C if self.mode == MODE::CGB => self.ppu.read(addr),
             0xFF70 => self.ram_bank | 0xF8, // only 3 LSb used
             0xFF80 ..= 0xFFFE => self.hram[(addr-0xff80) as usize],
             0xFFFF => self.IER,
@@ -334,6 +345,8 @@ impl Memory {
             0xFF50 => {
                 self.cart.bootrom = vec![];
                 self.cart.bootrom_enable = false;
+                self.mode = self.cart.gb_cart_type;
+                self.ppu.gb_mode = self.cart.gb_cart_type;
             },
             0xFF51 => {
                 self.vdma_src = (self.vdma_src&0xFF) | ((val as u16) << 8);
@@ -350,12 +363,24 @@ impl Memory {
             0xFF55 if self.mode == MODE::CGB => {  // TODO: "real" HDMA timings
                 let length = ((val as u16&0x7F)+1) * 0x10;
 
-                for i in 0 .. length {
-                    let v = self.read(self.vdma_src + i);
-                    self.write((0x8000 | self.vdma_dst) + 1, v);
+                if val&0x80 != 0 { // hdma
+                    self.hdma_active = true;
+                    self.hdma_length = val&0x7F;
+                    self.hdma5 = self.hdma_length;
+                } else { // gdma
+                    if self.hdma_active {
+                        self.hdma_active = false;
+                        self.hdma5 |= 0x80;
+                    } else {
+                        for i in 0 .. length {
+                            let v = self.read(self.vdma_src + i);
+                            self.write((0x8000 | self.vdma_dst) + i, v);
+                        }
+                        self.hdma5 = 0xFF;
+                    }
                 }
             },
-            0xFF68 ..= 0xFF6B => {
+            0xFF68 ..= 0xFF6C if self.mode == MODE::CGB => {
                 self.ppu.write(addr, val)
             },
             0xFF70 if self.mode == MODE::CGB => {
@@ -372,8 +397,30 @@ impl Memory {
     }
 
     pub fn tick(&mut self) {
+        let ppu_mode = self.ppu.mode;
         self.ppu.tick(&mut self.vram, &mut self.OAM, &mut self.IF, &self.input_select);
         self.apu.tick();
+
+        if self.hdma_active {
+            if ppu_mode != self.ppu.mode && self.ppu.mode == PPU_MODE::HBLANK {
+                let mut offset = self.hdma_length as u16 - (self.hdma5 as u16&0x7F);
+                offset = offset * 0x10;
+
+                for i in 0 .. 0x10 {
+                    let v = self.read(self.vdma_src + i + offset);
+                    self.write((0x8000 | self.vdma_dst) + i + offset, v);
+                    self.tick();
+                    self.tick();
+                }
+
+                if self.hdma5&0x7F == 0 {
+                    self.hdma_active = false;
+                    self.hdma5 = 0xFF;
+                } else {
+                    self.hdma5 -= 1;
+                }
+            }
+        }
 
         self.serial_transfer = (self.serial_transfer >> 1) | 0x80;
         if self.serial_count_interrupt > 0 {
