@@ -1,5 +1,5 @@
 [package]
-name = "GameBoy-rs"
+name = "sponGB"
 version = "0.1.0"
 authors = ["Szczepan <szczepan7700@gmail.com>"]
 edition = "2018"
@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 raylib = "3.0.0"
+

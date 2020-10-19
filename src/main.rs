@@ -6,7 +6,7 @@ mod emulator;
 fn main() -> Result<(), Box<dyn Error>> {
     let mut c = emulator::CPU::new();
     let p = Path::new(&"gbc_bootrom.gbc");
-    let r = Path::new(&"pkred.gb");
+    let r = Path::new(&"pksilver.gbc");
     c.memory.load_rom(&r)?;
     c.memory.load_bootrom(&p)?;
     

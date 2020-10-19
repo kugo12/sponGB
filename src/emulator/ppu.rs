@@ -5,6 +5,7 @@ use raylib::prelude::*;
 use crate::emulator::MODE;
 
 const GRAYSCALE_COLOR: [Color; 4] = [Color::WHITE, Color::LIGHTGRAY, Color::GRAY, Color::BLACK];
+const WH_RATIO: f32 = 160./144.;
 
 #[derive(PartialEq, Copy, Clone)]
 pub enum PPU_MODE {
@@ -159,7 +160,8 @@ pub struct Draw {
     // tiles_dest_rect: Rectangle,
     frame_dest_rect: Rectangle,
     // tiles_src_rect: Rectangle,
-    frame_src_rect: Rectangle
+    frame_src_rect: Rectangle,
+    position: Vector2
 }
 
 impl Draw {
@@ -168,6 +170,7 @@ impl Draw {
         let (mut handle, thread) = raylib::init()
             .size(160*2, 144*2)
             .title("Gameboy emulator")
+            .resizable()
             .build();
         handle.set_target_fps(60);
 
@@ -192,6 +195,7 @@ impl Draw {
             frame_dest_rect: Rectangle::new(0., 0., 160.*2., 144.*2.),
             // tiles_src_rect: Rectangle::new(0., 0., 128., 192.),
             frame_src_rect: Rectangle::new(0., 0., 160., 144.),
+            position: Vector2::new(0., 0.)
         }
     }
 
@@ -199,11 +203,19 @@ impl Draw {
     pub fn new_frame(&mut self, vram: &[u8]) {
         // self.draw_vram_tiles(vram);
         // self.tiles.update_texture(self.tile_arr.as_ref());
+        if self.handle.is_window_resized() {
+            let h = self.handle.get_screen_height() as f32;
+            let w = WH_RATIO * h;
+            let x = (w - self.handle.get_screen_width() as f32)/2.;
+
+            self.frame_dest_rect = Rectangle::new(0., 0., w, h);
+            self.position = Vector2::new(x, 0.);
+        }
 
         self.txt.update_texture(&self.frame);
         let mut d = self.handle.begin_drawing(&self.thread);
-        d.clear_background(Color::WHITE);
-        d.draw_texture_pro(&self.txt, self.frame_src_rect, self.frame_dest_rect, Vector2::new(0., 0.), 0., Color::WHITE);
+        d.clear_background(Color::BLACK);
+        d.draw_texture_pro(&self.txt, self.frame_src_rect, self.frame_dest_rect, self.position, 0., Color::WHITE);
         // d.draw_texture_pro(&self.tiles, self.tiles_src_rect, self.tiles_dest_rect, Vector2::new(0., 0.), 0., Color::WHITE);
         d.draw_fps(0, 0);
     }
